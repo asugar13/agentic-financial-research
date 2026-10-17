@@ -1,10 +1,12 @@
 # Agentic Financial Research
 
-Pass 1 of a platform that will combine market research with quantitative experiments.
-This pass is a CLI, a LangGraph research loop, Pydantic state, and three typed fixture tools.
+An incremental platform combining market research with future quantitative experiments.
+The research agent has a CLI, a LangGraph loop, Pydantic state, and three fixture tools.
+A standalone real-price tool is the first integration in pass 2.
 
-**Every price, macro value, and news item is synthetic.** The fixture period is
-2025-01-02 to 2025-03-31. This application does not fetch current market data.
+**Research-agent runs still use synthetic prices, macro values, and news**, for
+2025-01-02 to 2025-03-31. The standalone price command below fetches real data;
+connecting that tool to the graph is the next change.
 
 ## Run the first pass
 
@@ -94,7 +96,55 @@ provider adapters receive the same scope and available actions.
 References: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling)
 and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
 
-## Optional: let an LLM choose the tools
+## Fetch real prices independently
+
+[`prices.py`](src/financial_research/prices.py) implements
+`get_market_prices(HistoricalPriceRequest) -> ToolResult`. The dated request in
+`models.py` accepts 1–5 Yahoo Finance symbols, a rationale, and inclusive start/end
+dates. Symbols are trimmed, uppercased, and deduplicated. Examples include `AAPL`,
+`MSFT`, and `SPY`; availability and instrument meanings follow Yahoo's symbols.
+
+Yahoo Finance is accessed through `yfinance`. No API key is required:
+
+```sh
+.venv/bin/python -m financial_research.prices \
+  --symbols AAPL MSFT \
+  --start-date 2020-01-01 --end-date 2024-12-31
+```
+
+The command prints our normalized `Observation`/`ToolResult` JSON: selected daily
+closes, close-price change, requested and actual dates, provider currency/unit and
+timezone when available, retrieval timestamp, and source URL. Observations are
+marked as real data. `yfinance` is a runtime dependency; its DataFrame output is
+converted to ordinary validated Python values at this boundary.
+
+Data boundaries:
+
+- Daily history supports multi-year requests, with coverage depending on the
+  symbol. This tool has no 100-observation cap. It does not fetch intraday data.
+- Dates select observed closes within the inclusive interval. Yahoo's exclusive
+  end date is translated internally. At least two closes are required. No missing
+  sessions are filled; shorter coverage is explicitly noted alongside actual dates.
+- Changes use Yahoo's `Close` column with `auto_adjust=False`: no additional
+  dividend adjustment is applied by the client. These are price changes, not total
+  returns. Currency/unit is preserved as reported (for example `GBp`); missing
+  currency stays unknown.
+- Each distinct symbol gets a history request. `yfinance` manages the underlying
+  Yahoo session and may make several HTTP requests. The tool adds no retries.
+  A failure for any symbol returns an error with no partial observations and a
+  nonzero CLI exit status; there is no fallback to synthetic data.
+- `yfinance` is an unofficial client intended for personal research. Yahoo can
+  rate-limit requests or change its endpoints; it is not a guaranteed data service.
+
+Tests use mocked provider DataFrames to check multi-year history, inclusive dates,
+normalization, calculations, coverage, and failures without network access.
+A separate live check fetched 1,258 daily closes for each of AAPL and MSFT from
+2020-01-02 through 2024-12-31 without an API key.
+
+Source contract: [yfinance documentation](https://ranaroussi.github.io/yfinance/)
+and [history date/adjustment options](https://ranaroussi.github.io/yfinance/reference/api/yfinance.download.html).
+
+## Optional: use the OpenAI provider
 
 Install the provider extra if needed, then configure credentials through your shell:
 
@@ -136,7 +186,7 @@ python3 -m venv .venv
 ```
 
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
-LangGraph for stateful orchestration and Pydantic for boundary validation. Pytest
+LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
 is a development dependency; the OpenAI SDK is an optional provider dependency.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
 
@@ -155,11 +205,11 @@ at least one citation. It does **not** verify that the cited evidence supports t
 claim. Uncited factual assertions in report titles or limitations are constrained
 by prompts, not semantic validation. Groundedness evaluation belongs in a later pass.
 
-There is no critic/revision loop, real data integration, checkpoint/resume support,
-tracing setup, or quant workflow yet. The event list is a small execution log, not
-an observability platform. Failed model runs print an error; only successful runs
-save artifacts. The next pass replaces one fixture tool with a real adapter while
-preserving the graph and normalized evidence boundary.
+There is no critic/revision loop, checkpoint/resume support, tracing setup, or
+quant workflow yet. The event list is a small execution log, not an observability
+platform. Failed model runs print an error; only successful runs save artifacts.
+Real prices currently run independently; graph integration is the next checkpoint
+within pass 2, followed by real macro and news tools.
 
 Later quantitative tools can produce evidence with additional experiment metadata.
 They will use a separate experiment workflow, rather than squeezing methodology
