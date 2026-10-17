@@ -53,7 +53,7 @@ owns the research plan, next-action selection, and report content. Each decision
 receives the updated state, so it can respond to the last tool result.
 
 `DemoModel` is intentionally scripted; it teaches graph execution, not autonomous
-research. In `llm` mode, the same graph uses native model function calls to choose
+research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
 the next tool, its arguments, or an early stop. The tool catalog contains only
 `get_market_prices`, `get_macro_series`, `search_news`, and the `finish_research` routing action.
 
@@ -65,8 +65,34 @@ the next tool, its arguments, or an early stop. The tool catalog contains only
 4. [`tools.py`](src/financial_research/tools.py): fixture data, calculated returns, and explicit unavailable-data results.
 5. [`research_model.py`](src/financial_research/research_model.py): the model interface and scripted demo.
 
-Then work through [`docs/pass-1.md`](docs/pass-1.md). The optional provider adapter
-and CLI plumbing can wait until you understand the graph.
+## Use local Qwen with Ollama
+
+With Ollama running and `qwen2.5:7b` installed:
+
+```sh
+.venv/bin/python -m financial_research --mode ollama
+```
+
+This calls your local server at `http://127.0.0.1:11434/api/chat`. No API key,
+OpenAI credits, or additional Python dependencies are needed. The tools still
+return synthetic data, but Qwen chooses the plan, tool calls, and report.
+
+Use `ollama list` to see installed models. Select a different installed model with
+`--model`, or set `OLLAMA_MODEL`. The default is `qwen2.5:7b`; `OPENAI_MODEL` has no
+effect on local mode. If the server is stopped, start Ollama or run `ollama serve`.
+
+[`ollama_model.py`](src/financial_research/ollama_model.py) implements the existing
+`ResearchModel` interface. Plans and reports use JSON schemas; next actions use
+native tool calling. Python validates both before the graph uses them. Requests
+have a 120-second timeout and bounded context/output settings; invalid or
+truncated responses stop the run explicitly. Local model quality can vary, so a
+successful run establishes integration rather than research completeness.
+
+The shared instructions and tool catalog live in `research_model.py`, so both
+provider adapters receive the same scope and available actions.
+
+References: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling)
+and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
 
 ## Optional: let an LLM choose the tools
 
@@ -115,9 +141,12 @@ is a development dependency; the OpenAI SDK is an optional provider dependency.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
 
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
-citation integrity, invalid requests, CLI artifacts, and SDK serialization/parsing
-through an in-memory HTTP transport. They make no live model requests. A live
-model smoke test and quality evaluation remain outstanding.
+citation integrity, invalid requests, CLI artifacts, and both provider adapters
+through mocked HTTP transports. They make no live model requests. A separate local
+smoke test with `qwen2.5:7b` completed, selecting prices, news, and then a stop,
+and saved a cited report. OpenAI live verification and research-quality evaluation
+remain outstanding. The local report omitted collected counterevidence, which
+illustrates a quality issue for the later evaluation/critic pass.
 
 ## Boundaries of this pass
 

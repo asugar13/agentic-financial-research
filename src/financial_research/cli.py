@@ -25,8 +25,8 @@ def _budget(value: str) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Inspect a bounded financial research loop using synthetic data.")
     parser.add_argument("question", nargs="?", default=DEMO_QUESTION)
-    parser.add_argument("--mode", choices=["demo", "llm"], default="demo")
-    parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL"), help="LLM model ID, or set OPENAI_MODEL")
+    parser.add_argument("--mode", choices=["demo", "ollama", "llm"], default="demo")
+    parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL (default qwen2.5:7b) or OPENAI_MODEL")
     parser.add_argument("--max-tool-calls", type=_budget, default=4)
     parser.add_argument("--output", type=Path, default=Path("runs"), help="Parent directory for a new run folder")
     args = parser.parse_args(argv)
@@ -35,14 +35,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print("SYNTHETIC FIXTURES | " + ("scripted demo, no LLM" if args.mode == "demo" else "LLM-selected tools"))
     model: ResearchModel = DemoModel()
-    if args.mode == "llm":
-        if not os.environ.get("OPENAI_API_KEY") or not args.model:
+    if args.mode == "ollama":
+        from financial_research.ollama_model import OllamaModel
+
+        model = OllamaModel(args.model or os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b")
+        print(f"Local Ollama model: {model.model}", flush=True)
+    elif args.mode == "llm":
+        model_name = args.model or os.environ.get("OPENAI_MODEL")
+        if not os.environ.get("OPENAI_API_KEY") or not model_name:
             parser.error("llm mode requires OPENAI_API_KEY and --model (or OPENAI_MODEL)")
         try:
             from financial_research.openai_model import OpenAIModel
         except ImportError:
             parser.error("install the optional provider with: python -m pip install -e '.[llm]'")
-        model = OpenAIModel(args.model)
+        model = OpenAIModel(model_name)
 
     try:
         state = run_research(
