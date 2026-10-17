@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "financial-research"
+version = "0.1.0"
+description = "A small, inspectable agentic financial research workflow."
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.0,<2",
+    "pydantic>=2.12,<3",
+]
+
+[project.optional-dependencies]
+llm = ["openai>=2,<3"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+financial-research = "financial_research.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
