@@ -4,20 +4,21 @@ An incremental platform combining market research with future quantitative exper
 The research agent has a CLI, a LangGraph loop, Pydantic state, and three fixture tools.
 Real prices and macro data are available independently and through the graph in pass 2.
 
-**The default data source is synthetic fixtures**, for 2025-01-02 to 2025-03-31.
-Select `--data-source yahoo` for real Yahoo prices and FRED macro data with explicit
-symbols and dates. Real news integration is still pending.
+**Local Ollama and real data are the defaults.** Provide a question, symbols, and
+dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
+`--mode demo` for the offline synthetic example. Real news integration is still pending.
 
 ## Run the first pass
 
 The project environment has already been installed in `.venv` in this workspace:
 
 ```sh
-.venv/bin/financial-research
+.venv/bin/financial-research --mode demo
 ```
 
-The default question is “Why has silver outperformed gold recently?” The default
-`demo` mode replays scripted model decisions. It needs no credentials and supports
+The demo question is “Why has silver outperformed gold recently?” Explicit
+`demo` mode replays scripted model decisions over synthetic data for
+2025-01-02 to 2025-03-31. It needs no credentials and supports
 only this question, so it cannot silently apply the canned answer to an unrelated question.
 
 Each run prints its decisions and creates a fresh `runs/<run-id>/` directory:
@@ -31,7 +32,7 @@ because the scripted model selects `finish_research`.
 Compare a run that stops earlier:
 
 ```sh
-.venv/bin/financial-research --max-tool-calls 1
+.venv/bin/financial-research --mode demo --max-tool-calls 1
 ```
 
 Only price evidence is collected. The stop reason becomes `tool_budget_exhausted`,
@@ -74,12 +75,16 @@ It excludes fixture news and never falls back to synthetic observations.
 With Ollama running and `qwen2.5:7b` installed:
 
 ```sh
-.venv/bin/python -m financial_research --mode ollama
+.venv/bin/python -m financial_research \
+  "How did AAPL closing prices change during 2024?" \
+  --symbols AAPL --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
-This calls your local server at `http://127.0.0.1:11434/api/chat`. No API key,
-OpenAI credits, or additional Python dependencies are needed. With the default
-fixture source, Qwen chooses the plan, tool calls, and report over synthetic data.
+This calls your local server at `http://127.0.0.1:11434/api/chat`. No OpenAI credits
+or additional Python dependencies are needed. Yahoo prices need no API key; FRED
+macro requests require `FRED_API_KEY`, as described below. Qwen chooses the plan,
+tool calls, and report over real data. `--mode ollama` is optional because it is
+the default.
 
 Use `ollama list` to see installed models. Select a different installed model with
 `--model`, or set `OLLAMA_MODEL`. The default is `qwen2.5:7b`; `OPENAI_MODEL` has no
@@ -100,28 +105,25 @@ and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs
 
 ## Research real prices and macro data with Qwen
 
-`--mode` selects the model implementation; `--data-source` independently selects
-the data tools. To research several years of prices with local Qwen:
+To research several years of prices with local Qwen:
 
 ```sh
 .venv/bin/python -m financial_research \
   "How did AAPL and MSFT closing prices change from 2020 through 2024?" \
-  --mode ollama --data-source yahoo \
   --symbols AAPL MSFT --start-date 2020-01-01 --end-date 2024-12-31
 ```
 
 No price API key is required. Real-data mode requires an explicit question,
 symbols, and dates, and cannot use the scripted `demo` model.
+Running without arguments prints the required scope and points to `--mode demo`.
 
 The model can select from the permitted symbols and decide when to fetch or stop.
 Python enforces the configured symbol set and date range before calling the real
 tool. It records failures without falling back to fixtures. Reports identify
 the configured real-data tools and the evidence actually retrieved.
 
-The current `--data-source yahoo` option enables real-data mode: Yahoo supplies
-prices, and FRED supplies macro series. Macro calls reuse the configured date
-range; no extra CLI flags are needed. The CLI defaults remain unchanged until
-the planned simplification at the end of pass 2.
+Both real-data tools are available to the model; macro calls reuse the configured
+date range. Use `--mode demo` for synthetic fixtures.
 
 The configured scope is stored in `state.json` as `price_request`, alongside full
 selected daily series. Model requests contain price summaries and provenance;
@@ -149,7 +151,6 @@ Or ask Qwen to collect both prices and macro data:
 ```sh
 .venv/bin/python -m financial_research \
   "Compare AAPL price changes and DFII10 real-yield changes from 2020 through 2024, without causal claims." \
-  --mode ollama --data-source yahoo \
   --symbols AAPL --start-date 2020-01-01 --end-date 2024-12-31
 ```
 
@@ -231,17 +232,17 @@ Install the provider extra if needed, then configure credentials through your sh
 .venv/bin/python -m pip install -e '.[llm]'
 # Set OPENAI_API_KEY securely in your environment.
 export OPENAI_MODEL="gpt-6.1-sol"
-.venv/bin/financial-research --mode llm
+.venv/bin/financial-research \
+  "How did AAPL closing prices change during 2024?" --mode llm \
+  --symbols AAPL --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
 Select a model available to your API account that supports Responses function
 calling and structured outputs. This is the application's API model; it is
 configured independently of the model helping you write code in Codex.
 
-LLM mode makes billable API requests. Its default data source is synthetic fixtures;
-the real-price flags described above also work with `--mode llm`.
-Other questions are allowed in this mode, but the agent should acknowledge when
-the fixture scope cannot answer them. No credentials or `.env` files are loaded or
+LLM mode makes billable API requests and uses the same real-data tools and
+required scope as local Ollama mode. No credentials or `.env` files are loaded or
 copied into run artifacts by application code.
 
 The adapter uses a fresh, bounded state snapshot per request, rather than retaining

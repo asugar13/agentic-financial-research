@@ -112,16 +112,18 @@ def test_cli_uses_local_model_without_openai_credentials(monkeypatch, tmp_path, 
     else:
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
     requests = _server(monkeypatch, [
-        _text({"objectives": ["Check availability."], "assumptions": ["Fixtures only."]}),
+        _text({"objectives": ["Check availability."], "assumptions": ["Use real data only."]}),
         _call("finish_research", rationale="No evidence needed for this test."),
         _text({"title": "Empty report", "claims": [], "limitations": ["No evidence collected."]}),
     ])
-    assert main(["--mode", "ollama", "--output", str(tmp_path), *arguments]) == 0
+    assert main(["Compare IBM prices.", "--symbols", "IBM", "--start-date", "2025-01-06",
+                 "--end-date", "2025-01-07", "--output", str(tmp_path), *arguments]) == 0
     assert all(request["model"] == expected for request in requests)
     assert len(list(tmp_path.glob("*/report.md"))) == 1
 
 
-def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path):
+@pytest.mark.parametrize("mode_arguments", [[], ["--mode", "ollama"]])
+def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path, mode_arguments):
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("FRED_API_KEY", "test-only-fred-key")
@@ -172,7 +174,7 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
 
     monkeypatch.setattr(macro, "urlopen", fred_response)
     assert main([
-        "Compare IBM closing prices.", "--mode", "ollama", "--data-source", "yahoo",
+        "Compare IBM closing prices.", *mode_arguments,
         "--symbols", "IBM", "--start-date", "2025-01-06", "--end-date", "2025-01-07",
         "--output", str(tmp_path),
     ]) == 0

@@ -29,10 +29,10 @@ def _budget(value: str) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run bounded financial research with fixture or real price and macro data.")
     parser.add_argument("question", nargs="?")
-    parser.add_argument("--mode", choices=["demo", "ollama", "llm"], default="demo")
+    parser.add_argument("--mode", choices=["demo", "ollama", "llm"], default="ollama",
+                        help="Model provider (default: ollama); demo runs scripted synthetic fixtures offline")
     parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL (default qwen2.5:7b) or OPENAI_MODEL")
     parser.add_argument("--max-tool-calls", type=_budget, default=4)
-    parser.add_argument("--data-source", choices=["fixtures", "yahoo"], default="fixtures")
     parser.add_argument("--symbols", nargs="+", help="Allowed provider symbols for real-price research")
     parser.add_argument("--start-date", type=date.fromisoformat)
     parser.add_argument("--end-date", type=date.fromisoformat)
@@ -42,11 +42,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("question must not be empty")
 
     price_request = None
-    if args.data_source == "yahoo":
-        if args.mode == "demo":
-            parser.error("real prices require --mode ollama or --mode llm")
+    if args.mode == "demo":
+        if args.symbols or args.start_date or args.end_date:
+            parser.error("demo mode uses a fixed synthetic scope; omit --symbols, --start-date, and --end-date")
+    else:
         if not args.question or not args.symbols or not args.start_date or not args.end_date:
-            parser.error("real prices require a question, --symbols, --start-date, and --end-date")
+            parser.error("research requires a question, --symbols, --start-date, and --end-date; use --mode demo for the offline example")
         try:
             price_request = HistoricalPriceRequest(
                 symbols=args.symbols, start_date=args.start_date, end_date=args.end_date,
@@ -54,8 +55,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except ValidationError:
             parser.error("Provide 1–5 nonempty symbols and start-date earlier than end-date.")
-    elif args.symbols or args.start_date or args.end_date:
-        parser.error("--symbols and date arguments require --data-source yahoo")
     question = args.question or DEMO_QUESTION
     label = "REAL DATA" if price_request is not None else "SYNTHETIC FIXTURES"
     print(label + " | " + ("scripted demo, no LLM" if args.mode == "demo" else "LLM-selected tools"))
