@@ -123,8 +123,7 @@ tool. It records failures without falling back to fixtures. Reports identify
 the configured real-data tools and the evidence actually retrieved.
 
 Both real-data tools are available to the model; macro calls reuse the configured
-date range. The former `--data-source` option has been removed. Model-backed runs
-use real data, and `--mode demo` uses synthetic fixtures.
+date range. Use `--mode demo` for synthetic fixtures.
 
 The configured scope is stored in `state.json` as `price_request`, alongside full
 selected daily series. Model requests contain price summaries and provenance;
