@@ -2,11 +2,11 @@
 
 An incremental platform combining market research with future quantitative experiments.
 The research agent has a CLI, a LangGraph loop, Pydantic state, and three fixture tools.
-A standalone real-price tool is the first integration in pass 2.
+Real prices are the first integration in pass 2, available independently and through the graph.
 
-**Research-agent runs still use synthetic prices, macro values, and news**, for
-2025-01-02 to 2025-03-31. The standalone price command below fetches real data;
-connecting that tool to the graph is the next change.
+**The default data source is synthetic fixtures**, for 2025-01-02 to 2025-03-31.
+Select `--data-source yahoo` for real, price-only research with explicit
+symbols and dates. Real macro and news integrations are still pending.
 
 ## Run the first pass
 
@@ -56,8 +56,10 @@ receives the updated state, so it can respond to the last tool result.
 
 `DemoModel` is intentionally scripted; it teaches graph execution, not autonomous
 research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
-the next tool, its arguments, or an early stop. The tool catalog contains only
-`get_market_prices`, `get_macro_series`, `search_news`, and the `finish_research` routing action.
+the next tool, its arguments, or an early stop. Fixture mode offers
+`get_market_prices`, `get_macro_series`, `search_news`, and `finish_research`.
+Real-data mode offers only `get_market_prices` and `finish_research`, preventing
+synthetic macro/news explanations from appearing alongside real prices.
 
 ## Read the code in this order
 
@@ -76,8 +78,8 @@ With Ollama running and `qwen2.5:7b` installed:
 ```
 
 This calls your local server at `http://127.0.0.1:11434/api/chat`. No API key,
-OpenAI credits, or additional Python dependencies are needed. The tools still
-return synthetic data, but Qwen chooses the plan, tool calls, and report.
+OpenAI credits, or additional Python dependencies are needed. With the default
+fixture source, Qwen chooses the plan, tool calls, and report over synthetic data.
 
 Use `ollama list` to see installed models. Select a different installed model with
 `--model`, or set `OLLAMA_MODEL`. The default is `qwen2.5:7b`; `OPENAI_MODEL` has no
@@ -95,6 +97,31 @@ provider adapters receive the same scope and available actions.
 
 References: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling)
 and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
+
+## Research real prices with Qwen
+
+`--mode` selects the model implementation; `--data-source` independently selects
+the data tools. To research several years of prices with local Qwen:
+
+```sh
+.venv/bin/python -m financial_research \
+  "How did AAPL and MSFT closing prices change from 2020 through 2024?" \
+  --mode ollama --data-source yahoo \
+  --symbols AAPL MSFT --start-date 2020-01-01 --end-date 2024-12-31
+```
+
+No price API key is required. Real-data mode requires an explicit question,
+symbols, and dates, and cannot use the scripted `demo` model.
+
+The model can select from the permitted symbols and decide when to fetch or stop.
+Python enforces the configured symbol set and date range before calling the real
+tool. It records failures without falling back to fixtures. Reports identify
+the actual data source and the price-only research limitation.
+
+The configured scope is stored in `state.json` as `price_request`, alongside full
+selected daily series. Model requests contain price summaries and provenance;
+daily rows are omitted from model context to avoid repeatedly filling its context
+window with the same price history. This does not alter the saved evidence.
 
 ## Fetch real prices independently
 
@@ -159,7 +186,8 @@ Select a model available to your API account that supports Responses function
 calling and structured outputs. This is the application's API model; it is
 configured independently of the model helping you write code in Codex.
 
-LLM mode makes billable API requests. The tools still return synthetic fixtures.
+LLM mode makes billable API requests. Its default data source is synthetic fixtures;
+the real-price flags described above also work with `--mode llm`.
 Other questions are allowed in this mode, but the agent should acknowledge when
 the fixture scope cannot answer them. No credentials or `.env` files are loaded or
 copied into run artifacts by application code.
@@ -192,11 +220,14 @@ is a development dependency; the OpenAI SDK is an optional provider dependency.
 
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
 citation integrity, invalid requests, CLI artifacts, and both provider adapters
-through mocked HTTP transports. They make no live model requests. A separate local
-smoke test with `qwen2.5:7b` completed, selecting prices, news, and then a stop,
-and saved a cited report. OpenAI live verification and research-quality evaluation
-remain outstanding. The local report omitted collected counterevidence, which
-illustrates a quality issue for the later evaluation/critic pass.
+through mocked HTTP transports. Real-price tests exercise the full CLI/model/tool/
+evidence/report path, enforce scope and fixture isolation, and check that context
+summaries preserve full saved data. The automated tests make no live model requests.
+Separate local smoke tests verified both fixture research and Qwen fetching real
+AAPL/MSFT prices for 2020–2024 through Yahoo Finance, then writing a cited report. OpenAI live verification
+and research-quality evaluation remain outstanding. An earlier fixture report
+omitted collected counterevidence, illustrating a quality issue for the later
+evaluation/critic pass.
 
 ## Boundaries of this pass
 
@@ -208,8 +239,9 @@ by prompts, not semantic validation. Groundedness evaluation belongs in a later 
 There is no critic/revision loop, checkpoint/resume support, tracing setup, or
 quant workflow yet. The event list is a small execution log, not an observability
 platform. Failed model runs print an error; only successful runs save artifacts.
-Real prices currently run independently; graph integration is the next checkpoint
-within pass 2, followed by real macro and news tools.
+The real-price integration is complete; real macro and news tools are the next
+checkpoints within pass 2. Price-only research can establish what changed, but it
+cannot establish the cause of a market move.
 
 Later quantitative tools can produce evidence with additional experiment metadata.
 They will use a separate experiment workflow, rather than squeezing methodology

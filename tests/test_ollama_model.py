@@ -4,9 +4,10 @@ import io
 import json
 from urllib.error import HTTPError, URLError
 
+import pandas as pd
 import pytest
 
-from financial_research import ollama_model
+from financial_research import ollama_model, prices
 from financial_research.cli import main
 from financial_research.ollama_model import OllamaModel
 from financial_research.research_model import ModelError
@@ -118,3 +119,52 @@ def test_cli_uses_local_model_without_openai_credentials(monkeypatch, tmp_path, 
     assert main(["--mode", "ollama", "--output", str(tmp_path), *arguments]) == 0
     assert all(request["model"] == expected for request in requests)
     assert len(list(tmp_path.glob("*/report.md"))) == 1
+
+
+def test_real_prices_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path):
+    monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    requests = _server(monkeypatch, [
+        _text({"objectives": ["Compare actual closing prices."], "assumptions": ["Price-only research."]}),
+        _call("get_market_prices", symbols=["ibm"], start_date="2025-01-06", end_date="2025-01-07",
+              rationale="Retrieve the scoped price evidence."),
+        _call("finish_research", rationale="The price comparison is complete."),
+        _text({
+            "title": "IBM price comparison",
+            "claims": [{"statement": "The close increased by 10%.", "kind": "observation", "evidence_ids": ["E001"]}],
+            "limitations": ["Prices alone cannot explain the cause of a market move."],
+        }),
+    ])
+    fetched = []
+
+    class Ticker:
+        def __init__(self, symbol):
+            assert symbol == "IBM"
+
+        def history(self, **kwargs):
+            fetched.append(kwargs)
+            return pd.DataFrame({"Close": [100, 110]}, index=pd.to_datetime(["2025-01-06", "2025-01-07"]))
+
+        def get_history_metadata(self):
+            return {"symbol": "IBM", "currency": "USD", "exchangeTimezoneName": "America/New_York"}
+
+    monkeypatch.setattr(prices.yf, "Ticker", Ticker)
+    assert main([
+        "Compare IBM closing prices.", "--mode", "ollama", "--data-source", "yahoo",
+        "--symbols", "IBM", "--start-date", "2025-01-06", "--end-date", "2025-01-07",
+        "--output", str(tmp_path),
+    ]) == 0
+    saved = ResearchState.model_validate_json(next(tmp_path.glob("*/state.json")).read_text())
+    report = next(tmp_path.glob("*/report.md")).read_text()
+    assert len(fetched) == 1
+    assert saved.price_request.symbols == ["IBM"]
+    assert saved.evidence[0].is_fixture is False
+    assert saved.evidence[0].data["price_change_pct"] == 10
+    assert len(saved.evidence[0].data["prices"]) == 2
+    assert "DATA SOURCE: Yahoo Finance" in report and "SYNTHETIC FIXTURE" not in report
+    assert "2025-01-06 to 2025-01-07" in requests[0]["messages"][0]["content"]
+    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "finish_research"}
+    context = json.loads(requests[2]["messages"][1]["content"])
+    assert "prices" not in context["evidence"][0]["data"]
+    assert "prices" not in context["tool_calls"][0]["result"]["observations"][0]["data"]
+    assert context["evidence"][0]["data"]["price_change_pct"] == 10

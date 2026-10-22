@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 from pydantic import BaseModel, Field, JsonValue
 
 from financial_research.models import ACTION_ADAPTER, Action, ResearchPlan, ResearchReport
-from financial_research.research_model import INSTRUCTIONS, TOOL_DEFINITIONS, ModelError
+from financial_research.research_model import ModelError, instructions, tool_definitions
 from financial_research.state import ResearchState
 
 T = TypeVar("T", bound=BaseModel)
@@ -40,13 +40,11 @@ class OllamaModel:
         self.model = model
 
     def _chat(self, state: ResearchState, task: str, **options: Any) -> _Message:
-        context = state.model_dump_json(include={
-            "question", "max_tool_calls", "plan", "evidence", "tool_calls", "stop_reason",
-        })
+        context = state.model_context()
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"{INSTRUCTIONS}\nTask: {task}"},
+                {"role": "system", "content": f"{instructions(state)}\nTask: {task}"},
                 {"role": "user", "content": context},
             ],
             "stream": False,
@@ -78,7 +76,7 @@ class OllamaModel:
 
     def make_plan(self, state: ResearchState) -> ResearchPlan:
         return self._structured(
-            state, "Create a small evidence-gathering plan. State fixture/date assumptions.", ResearchPlan,
+            state, "Create a small evidence-gathering plan. State source/date assumptions.", ResearchPlan,
         )
 
     def choose_action(self, state: ResearchState) -> Action:
@@ -86,14 +84,14 @@ class OllamaModel:
             {"type": "function", "function": {
                 "name": name, "description": description, "parameters": schema.model_json_schema(),
             }}
-            for name, schema, description in TOOL_DEFINITIONS
+            for name, schema, description in tool_definitions(state)
         ]
         message = self._chat(
             state,
             "Assess remaining evidence gaps. Call exactly ONE tool, including finish_research to stop. "
             "Do not return ordinary text or call multiple tools. "
             "Do not repeat an identical completed or failed call. "
-            "Stop if the fixture scope cannot answer the question.",
+            "Stop if the configured source scope cannot answer the question.",
             tools=tools,
         )
         if len(message.tool_calls) != 1:
@@ -108,6 +106,6 @@ class OllamaModel:
             "Label inferences. Include counterevidence when collected. "
             "Limitations are methodological/data-availability caveats, not uncited facts. "
             "If no evidence was collected, return no claims and explain why. "
-            "Acknowledge budget exhaustion or tool failures and synthetic data.",
+            "Acknowledge budget exhaustion, tool failures, and the configured source limitations.",
             ResearchReport,
         )

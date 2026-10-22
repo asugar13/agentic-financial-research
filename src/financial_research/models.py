@@ -53,6 +53,16 @@ class NewsRequest(ReasonedRequest):
 
 class PriceAction(PriceRequest):
     tool: Literal["get_market_prices"] = "get_market_prices"
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def dates_are_paired(self) -> "PriceAction":
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("Provide both start_date and end_date, or neither for fixture data.")
+        if self.start_date is not None and self.start_date >= self.end_date:
+            raise ValueError("start_date must be earlier than end_date.")
+        return self
 
 
 class MacroAction(MacroRequest):

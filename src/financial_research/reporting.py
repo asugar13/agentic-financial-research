@@ -16,9 +16,14 @@ def render_report(state: ResearchState) -> str:
         raise ValueError("Cannot render a run without a report.")
     report = state.report
     validate_citations(report, state)
+    data_notice = (
+        "> DATA SOURCE: Yahoo Finance daily closes via yfinance. Price-only research; macro and news evidence are unavailable."
+        if state.price_request is not None else
+        "> SYNTHETIC FIXTURE DATA — an orchestration demonstration, not market research."
+    )
     lines = [
         f"# {report.title}", "",
-        "> SYNTHETIC FIXTURE DATA — an orchestration demonstration, not market research.",
+        data_notice,
         "", f"Question: {state.question}", "",
         f"Stop reason: {state.stop_reason}", "", "## Findings", "",
     ]
