@@ -27,7 +27,7 @@ def _budget(value: str) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run bounded financial research with fixture or real price data.")
+    parser = argparse.ArgumentParser(description="Run bounded financial research with fixture or real price and macro data.")
     parser.add_argument("question", nargs="?")
     parser.add_argument("--mode", choices=["demo", "ollama", "llm"], default="demo")
     parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL (default qwen2.5:7b) or OPENAI_MODEL")
@@ -57,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.symbols or args.start_date or args.end_date:
         parser.error("--symbols and date arguments require --data-source yahoo")
     question = args.question or DEMO_QUESTION
-    label = "REAL PRICES" if price_request is not None else "SYNTHETIC FIXTURES"
+    label = "REAL DATA" if price_request is not None else "SYNTHETIC FIXTURES"
     print(label + " | " + ("scripted demo, no LLM" if args.mode == "demo" else "LLM-selected tools"))
     model: ResearchModel = DemoModel()
     if args.mode == "ollama":

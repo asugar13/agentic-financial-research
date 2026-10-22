@@ -1,4 +1,4 @@
-"""Typed fixture tools. Every number and news item here is synthetic."""
+"""Fixture implementations and dispatch to the configured real-data tools."""
 
 import re
 from datetime import date
@@ -6,8 +6,10 @@ from typing import Literal
 
 from pydantic import JsonValue
 
+from financial_research import macro, prices
 from financial_research.models import (
     Action,
+    HistoricalMacroRequest,
     HistoricalPriceRequest,
     MacroAction,
     MacroRequest,
@@ -95,24 +97,39 @@ def search_news(request: NewsRequest) -> ToolResult:
     ])
 
 
-def execute_tool(action: Action, price_request: HistoricalPriceRequest | None = None) -> ToolResult:
-    """Explicit allowlist: a model can request only one of these typed tools."""
-    if price_request is not None:
-        if not isinstance(action, PriceAction):
-            return ToolResult(error="Only the price tool is available in real-data mode; macro and news are not connected.")
-        if action.start_date is not None and (
-            action.start_date != price_request.start_date or action.end_date != price_request.end_date
-        ):
-            return ToolResult(error="Price-tool dates are outside the configured research scope.")
-        request = HistoricalPriceRequest(
-            symbols=action.symbols, start_date=price_request.start_date, end_date=price_request.end_date,
-            rationale=action.rationale,
-        )
-        if outside_scope := set(request.symbols) - set(price_request.symbols):
-            return ToolResult(error=f"Symbols outside the configured research scope: {', '.join(sorted(outside_scope))}.")
-        from financial_research.prices import get_market_prices as get_real_prices
+def _execute_real_prices(action: PriceAction, scope: HistoricalPriceRequest) -> ToolResult:
+    """Enforce the user's price scope before contacting Yahoo."""
+    if action.start_date is not None and (action.start_date != scope.start_date or action.end_date != scope.end_date):
+        return ToolResult(error="Price-tool dates are outside the configured research scope.")
+    request = HistoricalPriceRequest(
+        symbols=action.symbols, start_date=scope.start_date, end_date=scope.end_date, rationale=action.rationale,
+    )
+    outside_scope = set(request.symbols) - set(scope.symbols)
+    if outside_scope:
+        return ToolResult(error=f"Symbols outside the configured research scope: {', '.join(sorted(outside_scope))}.")
+    return prices.get_market_prices(request)
 
-        return get_real_prices(request)
+
+def _execute_real_tool(action: Action, scope: HistoricalPriceRequest) -> ToolResult:
+    match action:
+        case PriceAction():
+            return _execute_real_prices(action, scope)
+        case MacroAction():
+            request = HistoricalMacroRequest(
+                series_id=action.series_id, start_date=scope.start_date, end_date=scope.end_date,
+                rationale=action.rationale,
+            )
+            return macro.get_macro_series(request)
+        case NewsAction():
+            return ToolResult(error="Only price and macro tools are available in real-data mode; news is not connected.")
+        case _:
+            raise ValueError("finish_research is a routing action, not a data tool.")
+
+
+def execute_tool(action: Action, price_request: HistoricalPriceRequest | None = None) -> ToolResult:
+    """Select real or fixture execution, then dispatch the requested action."""
+    if price_request is not None:
+        return _execute_real_tool(action, price_request)
     match action:
         case PriceAction():
             if action.start_date is not None and (action.start_date != PERIOD_START or action.end_date != PERIOD_END):

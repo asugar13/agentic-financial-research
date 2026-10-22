@@ -95,16 +95,16 @@ def test_provider_reports_refusal_without_fabricating_a_plan():
         model.make_plan(ResearchState(question="Test question."))
 
 
-def test_real_data_scope_uses_the_price_only_catalog_and_instructions():
+def test_real_data_scope_uses_the_price_and_macro_catalog_and_instructions():
     model, requests = model_with_outputs([
-        tool_output("get_market_prices", symbols=["IBM"], start_date="2025-01-06", end_date="2025-01-07",
-                    rationale="Read the configured real-price evidence."),
+        tool_output("get_macro_series", series_id="DFII10", rationale="Inspect real yields in the configured interval."),
     ])
     scope = HistoricalPriceRequest(
         symbols=["IBM"], start_date="2025-01-06", end_date="2025-01-07", rationale="User-selected scope.",
     )
     action = model.choose_action(ResearchState(question="Compare IBM prices.", price_request=scope))
-    assert action.symbols == ["IBM"]
-    assert {tool["name"] for tool in requests[0]["tools"]} == {"get_market_prices", "finish_research"}
+    assert action.series_id == "DFII10"
+    assert {tool["name"] for tool in requests[0]["tools"]} == {"get_market_prices", "get_macro_series", "finish_research"}
     assert "REAL Yahoo Finance" in requests[0]["instructions"]
+    assert "FRED" in requests[0]["instructions"]
     assert json.loads(requests[0]["input"])["price_request"]["start_date"] == "2025-01-06"

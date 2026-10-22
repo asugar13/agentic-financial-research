@@ -17,7 +17,7 @@ def render_report(state: ResearchState) -> str:
     report = state.report
     validate_citations(report, state)
     data_notice = (
-        "> DATA SOURCE: Yahoo Finance daily closes via yfinance. Price-only research; macro and news evidence are unavailable."
+        "> REAL DATA MODE: Yahoo Finance prices and FRED macro data when retrieved. News research is unavailable."
         if state.price_request is not None else
         "> SYNTHETIC FIXTURE DATA — an orchestration demonstration, not market research."
     )

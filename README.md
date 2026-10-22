@@ -2,11 +2,11 @@
 
 An incremental platform combining market research with future quantitative experiments.
 The research agent has a CLI, a LangGraph loop, Pydantic state, and three fixture tools.
-Real prices are the first integration in pass 2, available independently and through the graph.
+Real prices and macro data are available independently and through the graph in pass 2.
 
 **The default data source is synthetic fixtures**, for 2025-01-02 to 2025-03-31.
-Select `--data-source yahoo` for real, price-only research with explicit
-symbols and dates. Real macro and news integrations are still pending.
+Select `--data-source yahoo` for real Yahoo prices and FRED macro data with explicit
+symbols and dates. Real news integration is still pending.
 
 ## Run the first pass
 
@@ -58,8 +58,8 @@ receives the updated state, so it can respond to the last tool result.
 research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
 the next tool, its arguments, or an early stop. Fixture mode offers
 `get_market_prices`, `get_macro_series`, `search_news`, and `finish_research`.
-Real-data mode offers only `get_market_prices` and `finish_research`, preventing
-synthetic macro/news explanations from appearing alongside real prices.
+Real-data mode offers `get_market_prices`, `get_macro_series`, and `finish_research`.
+It excludes fixture news and never falls back to synthetic observations.
 
 ## Read the code in this order
 
@@ -98,7 +98,7 @@ provider adapters receive the same scope and available actions.
 References: [Ollama tool calling](https://docs.ollama.com/capabilities/tool-calling)
 and [structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
 
-## Research real prices with Qwen
+## Research real prices and macro data with Qwen
 
 `--mode` selects the model implementation; `--data-source` independently selects
 the data tools. To research several years of prices with local Qwen:
@@ -116,12 +116,64 @@ symbols, and dates, and cannot use the scripted `demo` model.
 The model can select from the permitted symbols and decide when to fetch or stop.
 Python enforces the configured symbol set and date range before calling the real
 tool. It records failures without falling back to fixtures. Reports identify
-the actual data source and the price-only research limitation.
+the configured real-data tools and the evidence actually retrieved.
+
+The current `--data-source yahoo` option enables real-data mode: Yahoo supplies
+prices, and FRED supplies macro series. Macro calls reuse the configured date
+range; no extra CLI flags are needed. The CLI defaults remain unchanged until
+the planned simplification at the end of pass 2.
 
 The configured scope is stored in `state.json` as `price_request`, alongside full
 selected daily series. Model requests contain price summaries and provenance;
 daily rows are omitted from model context to avoid repeatedly filling its context
 window with the same price history. This does not alter the saved evidence.
+
+## Fetch real macro data
+
+[`macro.py`](src/financial_research/macro.py) implements
+`get_macro_series(HistoricalMacroRequest) -> ToolResult`. It retrieves FRED series
+metadata and historical values. The series ID is parameterized: `DFII10` (10-year
+real Treasury yield) is the initial example, not a whitelist.
+
+Set `FRED_API_KEY` in your environment using a
+[registered FRED API key](https://fred.stlouisfed.org/docs/api/api_key.html).
+The application does not load `.env` files. Run the tool independently:
+
+```sh
+.venv/bin/python -m financial_research.macro \
+  --series-id DFII10 --start-date 2020-01-01 --end-date 2024-12-31
+```
+
+Or ask Qwen to collect both prices and macro data:
+
+```sh
+.venv/bin/python -m financial_research \
+  "Compare AAPL price changes and DFII10 real-yield changes from 2020 through 2024, without causal claims." \
+  --mode ollama --data-source yahoo \
+  --symbols AAPL --start-date 2020-01-01 --end-date 2024-12-31
+```
+
+- Values retain the provider's units, frequency, and seasonal adjustment. A
+  difference in a `Percent` series is reported in **percentage points**, not as a
+  percent return. Other series use differences in their native units.
+- Missing FRED values (`.`) are saved as null, excluded from endpoint calculations,
+  and counted. No values are filled or resampled; at least two numeric observations
+  are required. Actual dates and shorter coverage are reported.
+- Full values are saved in `state.json`; model context contains summaries only.
+  The API key is excluded from observations, provenance URLs, and error messages.
+- FRED's latest available vintage and provider update time are recorded. Historical
+  values can include revisions; this is not an as-of dataset for backtesting.
+- The tool requests up to FRED's 100,000-observation maximum and rejects incomplete
+  responses rather than silently truncating. Each call requests metadata and values.
+  Missing credentials and provider failures become tool errors; Yahoo price-only
+  requests still work without a FRED key.
+
+A live 2020–2024 DFII10 check retrieved 1,251 numeric values and 54 missing values.
+Automated tests cover the adapter and the full CLI/model/tool/evidence/report path
+using mocked provider responses.
+
+Source contracts: [FRED series metadata](https://fred.stlouisfed.org/docs/api/fred/series.html)
+and [historical observations](https://fred.stlouisfed.org/docs/api/fred/series_observations.html).
 
 ## Fetch real prices independently
 
@@ -239,9 +291,10 @@ by prompts, not semantic validation. Groundedness evaluation belongs in a later 
 There is no critic/revision loop, checkpoint/resume support, tracing setup, or
 quant workflow yet. The event list is a small execution log, not an observability
 platform. Failed model runs print an error; only successful runs save artifacts.
-The real-price integration is complete; real macro and news tools are the next
-checkpoints within pass 2. Price-only research can establish what changed, but it
-cannot establish the cause of a market move.
+Real prices and macro data are connected; real news is the next checkpoint within
+pass 2. Endpoint comparisons can establish what changed, but cannot establish
+the cause of a market move. Model context does not include the full time series,
+so deeper statistical analysis needs a separate quantitative tool.
 
 Later quantitative tools can produce evidence with additional experiment metadata.
 They will use a separate experiment workflow, rather than squeezing methodology

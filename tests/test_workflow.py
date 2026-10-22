@@ -106,8 +106,7 @@ def test_separate_runs_do_not_share_evidence():
 
 
 @pytest.mark.parametrize("action, error", [
-    (MacroAction(series_id="DFII10", rationale="Try macro data."), "macro and news are not connected"),
-    (NewsAction(query="IBM", rationale="Try news."), "macro and news are not connected"),
+    (NewsAction(query="IBM", rationale="Try news."), "news is not connected"),
     (PriceAction(symbols=["MSFT"], rationale="Try an unapproved symbol."), "outside the configured research scope"),
     (PriceAction(symbols=["IBM"], start_date="2025-01-07", end_date="2025-01-08",
                  rationale="Try a different date range."), "dates are outside the configured research scope"),
@@ -155,3 +154,30 @@ def test_scripted_demo_cannot_be_used_for_real_data():
     )
     with pytest.raises(ValueError, match="scripted demo supports fixture data only"):
         run_research(DEMO_QUESTION, DemoModel(), price_request=scope)
+
+
+def test_real_macro_failure_is_recorded_without_fixture_fallback(monkeypatch):
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+
+    class MacroModel(DemoModel):
+        def make_plan(self, state):
+            from financial_research.models import ResearchPlan
+
+            return ResearchPlan(objectives=["Retrieve real yields."], assumptions=[])
+
+        def choose_action(self, state):
+            if not state.tool_calls:
+                return MacroAction(series_id="DFII10", rationale="Check real Treasury yields.")
+            return FinishAction(rationale="The macro tool failed; report the data gap.")
+
+        def write_report(self, state):
+            return ResearchReport(title="Macro unavailable", claims=[], limitations=[state.tool_calls[0].result.error])
+
+    scope = HistoricalPriceRequest(
+        symbols=["IBM"], start_date="2020-01-01", end_date="2024-12-31", rationale="User-selected scope.",
+    )
+    state = run_research("Inspect DFII10 yields.", MacroModel(), price_request=scope)
+    assert state.evidence == []
+    assert len(state.tool_calls) == 1
+    assert "FRED_API_KEY" in state.tool_calls[0].result.error
+    assert "No supported findings" in render_report(state)
