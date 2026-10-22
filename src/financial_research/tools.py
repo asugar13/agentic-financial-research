@@ -8,6 +8,7 @@ from pydantic import JsonValue
 
 from financial_research.models import (
     Action,
+    HistoricalPriceRequest,
     MacroAction,
     MacroRequest,
     NewsAction,
@@ -94,10 +95,28 @@ def search_news(request: NewsRequest) -> ToolResult:
     ])
 
 
-def execute_tool(action: Action) -> ToolResult:
+def execute_tool(action: Action, price_request: HistoricalPriceRequest | None = None) -> ToolResult:
     """Explicit allowlist: a model can request only one of these typed tools."""
+    if price_request is not None:
+        if not isinstance(action, PriceAction):
+            return ToolResult(error="Only the price tool is available in real-data mode; macro and news are not connected.")
+        if action.start_date is not None and (
+            action.start_date != price_request.start_date or action.end_date != price_request.end_date
+        ):
+            return ToolResult(error="Price-tool dates are outside the configured research scope.")
+        request = HistoricalPriceRequest(
+            symbols=action.symbols, start_date=price_request.start_date, end_date=price_request.end_date,
+            rationale=action.rationale,
+        )
+        if outside_scope := set(request.symbols) - set(price_request.symbols):
+            return ToolResult(error=f"Symbols outside the configured research scope: {', '.join(sorted(outside_scope))}.")
+        from financial_research.prices import get_market_prices as get_real_prices
+
+        return get_real_prices(request)
     match action:
         case PriceAction():
+            if action.start_date is not None and (action.start_date != PERIOD_START or action.end_date != PERIOD_END):
+                return ToolResult(error=f"Fixture prices cover only {PERIOD_START} to {PERIOD_END}.")
             return get_market_prices(action)
         case MacroAction():
             return get_macro_series(action)

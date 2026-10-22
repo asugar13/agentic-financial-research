@@ -58,3 +58,17 @@ def test_llm_mode_requires_credentials(monkeypatch):
     with pytest.raises(SystemExit) as error:
         main(["--mode", "llm", "--model", "test-model"])
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--mode", "ollama", "--data-source", "yahoo"],
+    ["A question.", "--data-source", "yahoo"],
+    ["A question.", "--mode", "ollama", "--data-source", "yahoo", "--symbols", "IBM"],
+    ["--symbols", "IBM"],
+    ["A question.", "--mode", "ollama", "--data-source", "yahoo", "--symbols", "IBM",
+     "--start-date", "2025-02-01", "--end-date", "2025-01-01"],
+])
+def test_cli_rejects_ambiguous_or_invalid_real_data_configuration(arguments):
+    with pytest.raises(SystemExit) as error:
+        main(arguments)
+    assert error.value.code == 2

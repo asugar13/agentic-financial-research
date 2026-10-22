@@ -7,7 +7,7 @@ import pytest
 openai = pytest.importorskip("openai")
 httpx = pytest.importorskip("httpx")
 
-from financial_research.models import ResearchPlan, ResearchReport
+from financial_research.models import HistoricalPriceRequest, ResearchPlan, ResearchReport
 from financial_research.openai_model import ModelError, OpenAIModel
 from financial_research.state import ResearchState
 from financial_research.workflow import run_research
@@ -93,3 +93,18 @@ def test_provider_reports_refusal_without_fabricating_a_plan():
     }]])
     with pytest.raises(ModelError, match="no valid structured output"):
         model.make_plan(ResearchState(question="Test question."))
+
+
+def test_real_data_scope_uses_the_price_only_catalog_and_instructions():
+    model, requests = model_with_outputs([
+        tool_output("get_market_prices", symbols=["IBM"], start_date="2025-01-06", end_date="2025-01-07",
+                    rationale="Read the configured real-price evidence."),
+    ])
+    scope = HistoricalPriceRequest(
+        symbols=["IBM"], start_date="2025-01-06", end_date="2025-01-07", rationale="User-selected scope.",
+    )
+    action = model.choose_action(ResearchState(question="Compare IBM prices.", price_request=scope))
+    assert action.symbols == ["IBM"]
+    assert {tool["name"] for tool in requests[0]["tools"]} == {"get_market_prices", "finish_research"}
+    assert "REAL Yahoo Finance" in requests[0]["instructions"]
+    assert json.loads(requests[0]["input"])["price_request"]["start_date"] == "2025-01-06"

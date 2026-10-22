@@ -6,7 +6,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from financial_research.models import Evidence, FinishAction, ToolCall
+from financial_research.models import Evidence, FinishAction, HistoricalPriceRequest, ToolCall
 from financial_research.reporting import validate_citations
 from financial_research.research_model import ResearchModel
 from financial_research.state import ResearchState
@@ -46,7 +46,7 @@ def build_graph(
     def execute(state: ResearchState) -> dict[str, Any]:
         if state.action is None or isinstance(state.action, FinishAction):
             raise ValueError("execute requires a data-tool action.")
-        result = execute_tool(state.action)
+        result = execute_tool(state.action, state.price_request)
         evidence = list(state.evidence)
         seen = {(item.source_uri, item.content) for item in evidence}
         for observation in result.observations:
@@ -91,9 +91,10 @@ def run_research(
     model: ResearchModel,
     *,
     max_tool_calls: int = 4,
+    price_request: HistoricalPriceRequest | None = None,
     on_event: Callable[[str], None] | None = None,
 ) -> ResearchState:
-    initial = ResearchState(question=question, max_tool_calls=max_tool_calls)
+    initial = ResearchState(question=question, max_tool_calls=max_tool_calls, price_request=price_request)
     graph = build_graph(model, on_event)
     # At most 1 plan + (N executions + N+1 decisions) + 1 report.
     result = graph.invoke(initial, config={"recursion_limit": 2 * max_tool_calls + 6})

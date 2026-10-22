@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
 
 Text = Annotated[str, Field(min_length=1)]
 
@@ -25,6 +25,24 @@ class PriceRequest(ReasonedRequest):
     symbols: list[Text] = Field(min_length=1, max_length=5)
 
 
+class HistoricalPriceRequest(PriceRequest):
+    """Standalone real-data request; dates are inclusive."""
+
+    start_date: date
+    end_date: date
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_symbols(cls, symbols: list[str]) -> list[str]:
+        return list(dict.fromkeys(symbol.upper() for symbol in symbols))
+
+    @model_validator(mode="after")
+    def dates_are_ordered(self) -> "HistoricalPriceRequest":
+        if self.start_date >= self.end_date:
+            raise ValueError("start_date must be earlier than end_date.")
+        return self
+
+
 class MacroRequest(ReasonedRequest):
     series_id: Text
 
@@ -35,6 +53,16 @@ class NewsRequest(ReasonedRequest):
 
 class PriceAction(PriceRequest):
     tool: Literal["get_market_prices"] = "get_market_prices"
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def dates_are_paired(self) -> "PriceAction":
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("Provide both start_date and end_date, or neither for fixture data.")
+        if self.start_date is not None and self.start_date >= self.end_date:
+            raise ValueError("start_date must be earlier than end_date.")
+        return self
 
 
 class MacroAction(MacroRequest):
