@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 import pandas as pd
 import pytest
 
-from financial_research import ollama_model, prices
+from financial_research import macro, ollama_model, prices
 from financial_research.cli import main
 from financial_research.ollama_model import OllamaModel
 from financial_research.research_model import ModelError
@@ -121,18 +121,23 @@ def test_cli_uses_local_model_without_openai_credentials(monkeypatch, tmp_path, 
     assert len(list(tmp_path.glob("*/report.md"))) == 1
 
 
-def test_real_prices_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path):
+def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path):
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("FRED_API_KEY", "test-only-fred-key")
     requests = _server(monkeypatch, [
-        _text({"objectives": ["Compare actual closing prices."], "assumptions": ["Price-only research."]}),
+        _text({"objectives": ["Compare actual prices and real yields."], "assumptions": ["Endpoint comparisons cannot establish causation."]}),
         _call("get_market_prices", symbols=["ibm"], start_date="2025-01-06", end_date="2025-01-07",
               rationale="Retrieve the scoped price evidence."),
-        _call("finish_research", rationale="The price comparison is complete."),
+        _call("get_macro_series", series_id="dfii10", rationale="Inspect real yields over the same date range."),
+        _call("finish_research", rationale="Prices and real yields have been retrieved."),
         _text({
-            "title": "IBM price comparison",
-            "claims": [{"statement": "The close increased by 10%.", "kind": "observation", "evidence_ids": ["E001"]}],
-            "limitations": ["Prices alone cannot explain the cause of a market move."],
+            "title": "IBM prices and real yields",
+            "claims": [
+                {"statement": "The close increased by 10%.", "kind": "observation", "evidence_ids": ["E001"]},
+                {"statement": "Real yields fell by 0.2 percentage points.", "kind": "observation", "evidence_ids": ["E002"]},
+            ],
+            "limitations": ["Endpoint comparisons cannot establish the cause of a market move."],
         }),
     ])
     fetched = []
@@ -149,6 +154,23 @@ def test_real_prices_flow_from_cli_through_model_tool_state_and_report(monkeypat
             return {"symbol": "IBM", "currency": "USD", "exchangeTimezoneName": "America/New_York"}
 
     monkeypatch.setattr(prices.yf, "Ticker", Ticker)
+    macro_calls = []
+
+    def fred_response(request, timeout):
+        from urllib.parse import parse_qs, urlparse
+
+        url = urlparse(request.full_url)
+        macro_calls.append(parse_qs(url.query))
+        payload = {"seriess": [{
+            "id": "DFII10", "title": "10-Year Real Yield", "units": "Percent", "frequency": "Daily",
+            "seasonal_adjustment": "Not Seasonally Adjusted", "last_updated": "2025-01-08",
+        }]} if url.path.endswith("/series") else {
+            "count": 2, "offset": 0, "realtime_start": "2025-01-08", "realtime_end": "2025-01-08",
+            "observations": [{"date": "2025-01-06", "value": "2.2"}, {"date": "2025-01-07", "value": "2.0"}],
+        }
+        return io.BytesIO(json.dumps(payload).encode())
+
+    monkeypatch.setattr(macro, "urlopen", fred_response)
     assert main([
         "Compare IBM closing prices.", "--mode", "ollama", "--data-source", "yahoo",
         "--symbols", "IBM", "--start-date", "2025-01-06", "--end-date", "2025-01-07",
@@ -161,10 +183,20 @@ def test_real_prices_flow_from_cli_through_model_tool_state_and_report(monkeypat
     assert saved.evidence[0].is_fixture is False
     assert saved.evidence[0].data["price_change_pct"] == 10
     assert len(saved.evidence[0].data["prices"]) == 2
-    assert "DATA SOURCE: Yahoo Finance" in report and "SYNTHETIC FIXTURE" not in report
+    assert "REAL DATA MODE: Yahoo Finance" in report and "FRED" in report and "SYNTHETIC FIXTURE" not in report
     assert "2025-01-06 to 2025-01-07" in requests[0]["messages"][0]["content"]
-    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "finish_research"}
-    context = json.loads(requests[2]["messages"][1]["content"])
+    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "finish_research"}
+    assert len(saved.evidence) == 2 and all(not item.is_fixture for item in saved.evidence)
+    assert saved.evidence[1].data["change"] == -0.2
+    assert len(saved.evidence[1].data["values"]) == 2
+    assert macro_calls[1]["observation_start"] == ["2025-01-06"]
+    assert macro_calls[1]["observation_end"] == ["2025-01-07"]
+    assert macro_calls[1]["series_id"] == ["DFII10"]
+    assert "test-only-fred-key" not in saved.model_dump_json() and "test-only-fred-key" not in report
+    context = json.loads(requests[3]["messages"][1]["content"])
     assert "prices" not in context["evidence"][0]["data"]
     assert "prices" not in context["tool_calls"][0]["result"]["observations"][0]["data"]
     assert context["evidence"][0]["data"]["price_change_pct"] == 10
+    assert "values" not in context["evidence"][1]["data"]
+    assert "values" not in context["tool_calls"][1]["result"]["observations"][0]["data"]
+    assert context["evidence"][1]["data"]["change"] == -0.2

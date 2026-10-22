@@ -47,6 +47,24 @@ class MacroRequest(ReasonedRequest):
     series_id: Text
 
 
+class HistoricalMacroRequest(MacroRequest):
+    """Real FRED series request; dates are inclusive."""
+
+    start_date: date
+    end_date: date
+
+    @field_validator("series_id")
+    @classmethod
+    def normalize_series_id(cls, series_id: str) -> str:
+        return series_id.upper()
+
+    @model_validator(mode="after")
+    def dates_are_ordered(self) -> "HistoricalMacroRequest":
+        if self.start_date >= self.end_date:
+            raise ValueError("start_date must be earlier than end_date.")
+        return self
+
+
 class NewsRequest(ReasonedRequest):
     query: Text
 

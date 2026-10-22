@@ -47,9 +47,13 @@ def instructions(state: ResearchState) -> str:
         "Request only symbols listed in price_request. These are Yahoo Close prices with auto_adjust=False, "
         "not total returns; no additional dividend adjustment is applied by the client. "
         "Use actual observation dates and acknowledge coverage notes or missing currency. "
-        "Only prices are available: macro and news research are not connected. "
-        "Describe observed price changes; prices alone cannot establish why a market moved. "
-        "Do not invent news or macro explanations, and do not describe real observations as synthetic."
+        "Real FRED macro series are also available through get_macro_series, using the same fixed date range. "
+        "For example DFII10 is the 10-year real Treasury yield. FRED requires FRED_API_KEY; acknowledge tool failures. "
+        "Use reported macro units, frequency, seasonal adjustment, and actual observation dates. "
+        "A change in a series measured in Percent is measured in percentage points, not percent return. "
+        "FRED values may include later revisions and are not an as-of backtest dataset. "
+        "News research is not connected. Comparing price and macro changes cannot establish causation. "
+        "Do not invent news or causal explanations, and do not describe real observations as synthetic."
     )
 
 
@@ -58,6 +62,7 @@ def tool_definitions(state: ResearchState) -> list[tuple[str, type[ReasonedReque
         return TOOL_DEFINITIONS
     return [
         ("get_market_prices", HistoricalPriceRequest, "Get real Yahoo daily closes; symbols and dates must match the configured research scope."),
+        ("get_macro_series", MacroRequest, "Get a real historical FRED series (e.g. DFII10) for the configured date range; requires FRED_API_KEY."),
         TOOL_DEFINITIONS[-1],  # finish_research is a routing action, not a data source.
     ]
 

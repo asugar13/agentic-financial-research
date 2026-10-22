@@ -30,7 +30,7 @@ class ResearchState(Model):
     events: list[str] = Field(default_factory=list)
 
     def model_context(self) -> str:
-        """Send summaries to the model; preserve full daily series in saved state."""
+        """Send summaries to the model; preserve full price and macro series in saved state."""
         context = self.model_dump(mode="json", include={
             "question", "price_request", "max_tool_calls", "plan", "evidence", "tool_calls", "stop_reason",
         })
@@ -39,4 +39,5 @@ class ResearchState(Model):
             observations.extend(call["result"]["observations"])
         for item in observations:
             item["data"].pop("prices", None)
+            item["data"].pop("values", None)
         return json.dumps(context)
