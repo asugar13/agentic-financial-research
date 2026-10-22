@@ -29,14 +29,14 @@ def test_news_query_with_no_matches_returns_no_evidence():
 
 
 def test_cli_saves_report_and_roundtrippable_state(tmp_path, capsys):
-    assert main(["--output", str(tmp_path)]) == 0
+    assert main(["--mode", "demo", "--output", str(tmp_path)]) == 0
     output = next(tmp_path.iterdir())
     saved = ResearchState.model_validate_json((output / "state.json").read_text())
     assert len(saved.tool_calls) == 3
     assert "SYNTHETIC FIXTURE DATA" in (output / "report.md").read_text()
     assert "finish_research" in capsys.readouterr().out
     # Reusing the output parent creates another run rather than overwriting it.
-    assert main(["--output", str(tmp_path), "--max-tool-calls", "0"]) == 0
+    assert main(["--mode", "demo", "--output", str(tmp_path), "--max-tool-calls", "0"]) == 0
     assert len(list(tmp_path.iterdir())) == 2
 
 
@@ -48,27 +48,42 @@ def test_cli_rejects_invalid_inputs(arguments):
 
 
 def test_demo_rejects_other_questions_without_creating_artifacts(tmp_path, capsys):
-    assert main(["Why did oil fall?", "--output", str(tmp_path)]) == 1
+    assert main(["Why did oil fall?", "--mode", "demo", "--output", str(tmp_path)]) == 1
     assert list(tmp_path.iterdir()) == []
     assert "scripted demo supports only" in capsys.readouterr().err
 
 
-def test_llm_mode_requires_credentials(monkeypatch):
+def test_llm_mode_requires_credentials(monkeypatch, capsys):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(SystemExit) as error:
-        main(["--mode", "llm", "--model", "test-model"])
+        main(["Compare IBM prices.", "--mode", "llm", "--model", "test-model",
+              "--symbols", "IBM", "--start-date", "2025-01-06", "--end-date", "2025-01-07"])
     assert error.value.code == 2
+    assert "llm mode requires OPENAI_API_KEY" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("arguments", [
-    ["--mode", "ollama", "--data-source", "yahoo"],
-    ["A question.", "--data-source", "yahoo"],
-    ["A question.", "--mode", "ollama", "--data-source", "yahoo", "--symbols", "IBM"],
+    [],
+    ["--mode", "ollama"],
+    ["A question."],
+    ["A question.", "--symbols", "IBM"],
     ["--symbols", "IBM"],
-    ["A question.", "--mode", "ollama", "--data-source", "yahoo", "--symbols", "IBM",
+    ["A question.", "--symbols", "IBM",
      "--start-date", "2025-02-01", "--end-date", "2025-01-01"],
+    ["--mode", "demo", "--symbols", "IBM"],
+    ["--mode", "demo", "--start-date", "2025-01-06"],
+    ["--mode", "demo", "--end-date", "2025-01-07"],
 ])
 def test_cli_rejects_ambiguous_or_invalid_real_data_configuration(arguments):
     with pytest.raises(SystemExit) as error:
         main(arguments)
     assert error.value.code == 2
+
+
+def test_cli_without_arguments_explains_required_scope_and_offline_demo(capsys):
+    with pytest.raises(SystemExit) as error:
+        main([])
+    assert error.value.code == 2
+    message = capsys.readouterr().err
+    assert "question, --symbols, --start-date, and --end-date" in message
+    assert "--mode demo" in message

@@ -88,7 +88,7 @@ class DemoModel:
         if state.question.casefold().rstrip("? .") != DEMO_QUESTION.casefold().rstrip("? ."):
             raise ValueError(
                 f"The scripted demo supports only: {DEMO_QUESTION} "
-                "Use --mode ollama or --mode llm for other questions (the data will still be fixtures)."
+                "For other questions, omit --mode demo and provide --symbols, --start-date, and --end-date."
             )
         return ResearchPlan(
             objectives=[
