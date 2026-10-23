@@ -282,12 +282,27 @@ and research-quality evaluation remain outstanding. An earlier fixture report
 omitted collected counterevidence, illustrating a quality issue for the later
 evaluation/critic pass.
 
+## Evaluate report quality locally
+
+The [report evaluation baseline](evals/README.md) runs the existing Qwen report
+writer against seven fixed evidence cases, including incorrect premises, missing
+data, and causal questions:
+
+```sh
+.venv/bin/python -m evals.report_baseline run
+```
+
+It saves reports, runtime, automatic citation/schema checks, and manual grading
+criteria under `runs/evals/`. Semantic grades remain pending until reviewed.
+It needs local Ollama but makes no Yahoo, FRED, or OpenAI requests.
+
 ## Boundaries of this pass
 
 The citation check rejects unknown evidence IDs, and every report claim must have
 at least one citation. It does **not** verify that the cited evidence supports the
 claim. Uncited factual assertions in report titles or limitations are constrained
-by prompts, not semantic validation. Groundedness evaluation belongs in a later pass.
+by prompts, not semantic validation. The evaluation baseline uses explicit manual
+criteria to assess whether reports stay within their evidence.
 
 There is no critic/revision loop, checkpoint/resume support, tracing setup, or
 quant workflow yet. The event list is a small execution log, not an observability

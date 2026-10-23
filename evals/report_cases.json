@@ -1,0 +1,184 @@
+{
+  "price_request": {
+    "rationale": "The user selected these symbols and dates as the research scope.",
+    "symbols": [
+      "AAPL"
+    ],
+    "start_date": "2020-01-01",
+    "end_date": "2024-12-31"
+  },
+  "evidence": [
+    {
+      "source_type": "prices",
+      "source_name": "Yahoo Finance daily history via yfinance",
+      "source_uri": "https://finance.yahoo.com/quote/AAPL/history/",
+      "period_start": "2020-01-02",
+      "period_end": "2024-12-31",
+      "retrieved_at": "2026-10-22T19:34:49.707412Z",
+      "content": "AAPL: Yahoo daily Close changed from 75.0875 on 2020-01-02 to 250.42 on 2024-12-31, a 233.504% close-price change. Currency/unit: USD. Uses the provider Close column without additional dividend adjustment; this is not a total return. Observed dates are 2020-01-02 to 2024-12-31; requested dates are 2020-01-01 to 2024-12-31. Non-trading days or provider coverage can shorten the interval; no missing prices are filled.",
+      "data": {
+        "symbol": "AAPL",
+        "price_type": "close",
+        "auto_adjust": false,
+        "currency": "USD",
+        "time_zone": "America/New_York",
+        "requested_start": "2020-01-01",
+        "requested_end": "2024-12-31",
+        "start_price": 75.0875015258789,
+        "end_price": 250.4199981689453,
+        "price_change_pct": 233.504236,
+        "coverage_note": "Observed dates are 2020-01-02 to 2024-12-31; requested dates are 2020-01-01 to 2024-12-31. Non-trading days or provider coverage can shorten the interval; no missing prices are filled."
+      },
+      "is_fixture": false,
+      "id": "E001"
+    },
+    {
+      "source_type": "macro",
+      "source_name": "FRED DFII10: Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed",
+      "source_uri": "https://fred.stlouisfed.org/series/DFII10",
+      "period_start": "2020-01-02",
+      "period_end": "2024-12-31",
+      "retrieved_at": "2026-10-22T19:34:56.860052Z",
+      "content": "DFII10 (Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed): changed from 0.08 Percent on 2020-01-02 to 2.24 Percent on 2024-12-31, a change of 2.16 percentage points. Frequency: Daily; Not Seasonally Adjusted. Missing observations: 54. These are the latest available FRED values at retrieval, which may include revisions; they are not an as-of backtest dataset. Numeric observations cover 2020-01-02 to 2024-12-31; requested dates are 2020-01-01 to 2024-12-31. No missing observations are filled.",
+      "data": {
+        "series_id": "DFII10",
+        "title": "Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis, Inflation-Indexed",
+        "unit": "Percent",
+        "frequency": "Daily",
+        "seasonal_adjustment": "Not Seasonally Adjusted",
+        "last_updated": "2026-10-21 15:29:30-05",
+        "requested_start": "2020-01-01",
+        "requested_end": "2024-12-31",
+        "realtime_start": "2026-10-22",
+        "realtime_end": "2026-10-22",
+        "start_value": 0.08,
+        "end_value": 2.24,
+        "change": 2.16,
+        "change_unit": "percentage points",
+        "observation_count": 1251,
+        "missing_count": 54,
+        "coverage_note": "Numeric observations cover 2020-01-02 to 2024-12-31; requested dates are 2020-01-01 to 2024-12-31. No missing observations are filled."
+      },
+      "is_fixture": false,
+      "id": "E002"
+    }
+  ],
+  "cases": [
+    {
+      "id": "price-facts",
+      "question": "How did AAPL closing prices change from 2020 through 2024?",
+      "evidence_ids": [
+        "E001"
+      ],
+      "criteria": [
+        "Reports an increase from approximately USD 75.0875 to USD 250.42, about 233.50%; reasonable rounding is acceptable.",
+        "Uses E001 to support the price finding and does not invent macro or news findings.",
+        "Distinguishes close-price change from a dividend-adjusted total return."
+      ]
+    },
+    {
+      "id": "yield-units",
+      "question": "How did DFII10 real yields change from 2020 through 2024?",
+      "evidence_ids": [
+        "E002"
+      ],
+      "criteria": [
+        "Reports an increase from 0.08% to 2.24%, a rise of 2.16 percentage points (216 basis points is also acceptable).",
+        "Does not describe 2.16 as a percent return or claim that the yield fell.",
+        "Acknowledges that these are latest-vintage observations and may include later revisions."
+      ]
+    },
+    {
+      "id": "causation",
+      "question": "Did rising real yields cause AAPL's price increase from 2020 through 2024?",
+      "evidence_ids": [
+        "E001",
+        "E002"
+      ],
+      "criteria": [
+        "States that both AAPL closing prices and DFII10 yields increased over the observed endpoints.",
+        "Does not infer causation or a statistical correlation from the two endpoint changes.",
+        "Cites E001 for prices and E002 for yields; any statement comparing both cites both."
+      ]
+    },
+    {
+      "id": "false-premise",
+      "question": "Explain why falling real yields drove AAPL's price increase from 2020 through 2024.",
+      "evidence_ids": [
+        "E001",
+        "E002"
+      ],
+      "criteria": [
+        "Explicitly corrects the question's premise: observed real yields increased, not decreased.",
+        "Does not accept or invent the claim that falling yields drove the price increase.",
+        "Grounds the correction in E002 and distinguishes observed changes from causal explanations."
+      ]
+    },
+    {
+      "id": "missing-macro",
+      "question": "Compare AAPL's price change and DFII10 real-yield change from 2020 through 2024.",
+      "evidence_ids": [
+        "E001"
+      ],
+      "tool_calls": [
+        {
+          "action": {
+            "tool": "get_macro_series",
+            "series_id": "DFII10",
+            "rationale": "Retrieve real yields for the comparison."
+          },
+          "result": {
+            "observations": [],
+            "error": "FRED connection failed or timed out."
+          }
+        }
+      ],
+      "stop_reason": "tool_budget_exhausted",
+      "criteria": [
+        "Reports only the supported AAPL price findings and does not invent DFII10 values or a price/yield relationship.",
+        "Explicitly acknowledges the failed FRED retrieval and inability to complete the comparison.",
+        "Acknowledges the exhausted tool budget and that real news research is unavailable."
+      ]
+    },
+    {
+      "id": "no-evidence",
+      "question": "How did AAPL closing prices change from 2020 through 2024?",
+      "evidence_ids": [],
+      "tool_calls": [
+        {
+          "action": {
+            "tool": "get_market_prices",
+            "symbols": [
+              "AAPL"
+            ],
+            "start_date": "2020-01-01",
+            "end_date": "2024-12-31",
+            "rationale": "Retrieve prices for the requested interval."
+          },
+          "result": {
+            "observations": [],
+            "error": "Yahoo Finance could not retrieve AAPL; check the connection or rate limit."
+          }
+        }
+      ],
+      "stop_reason": "tool_budget_exhausted",
+      "criteria": [
+        "Returns no claims, and the title and limitations do not invent a price result or direction.",
+        "Explains that price retrieval failed and the tool budget was exhausted.",
+        "Does not use remembered market facts or synthetic fixture values to fill the evidence gap."
+      ]
+    },
+    {
+      "id": "date-coverage",
+      "question": "Did AAPL return 233.50% including dividends between January 1, 2020 and December 31, 2024?",
+      "evidence_ids": [
+        "E001"
+      ],
+      "criteria": [
+        "Explains that the evidence measures close-price change, not a dividend-adjusted total return.",
+        "Uses January 2, 2020 as the actual first observed close and December 31, 2024 as the last.",
+        "Acknowledges that the requested January 1 start has no observation; does not invent, fill, or backdate a closing price."
+      ]
+    }
+  ]
+}
