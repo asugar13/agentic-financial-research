@@ -61,15 +61,17 @@ def evaluate_case(suite: Suite, case: Case, write_report: Callable[[ResearchStat
     try:
         report = ResearchReport.model_validate(write_report(state))
         result["report"] = report.model_dump(mode="json")
-        result["automatic_checks"] = {
-            "report_schema": True,
-            "citation_ids_exist": True,
-            "no_claims_without_evidence": not report.claims or bool(state.evidence),
-        }
         try:
             validate_citations(report, state)
         except ValueError:
-            result["automatic_checks"]["citation_ids_exist"] = False
+            citations_exist = False
+        else:
+            citations_exist = True
+        result["automatic_checks"] = {
+            "report_schema": True,
+            "citation_ids_exist": citations_exist,
+            "no_claims_without_evidence": not report.claims or bool(state.evidence),
+        }
     except (ValueError, RuntimeError, OSError) as exc:
         result["error"] = str(exc)
     result["seconds"] = round(time.perf_counter() - started, 3)
