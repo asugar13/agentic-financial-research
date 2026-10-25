@@ -197,6 +197,11 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
     assert "2025-01-06 to 2025-01-07" in requests[0]["messages"][0]["content"]
     assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "finish_research"}
     assert len(saved.evidence) == 2 and all(not item.is_fixture for item in saved.evidence)
+    quant = json.loads(next(tmp_path.glob("*/quant.json")).read_text())
+    assert quant["assets"][0]["symbol"] == "IBM"
+    assert quant["assets"][0]["evidence_id"] == saved.evidence[0].id
+    assert quant["assets"][0]["return_count"] == 1
+    assert quant["assets"][0]["annualized_volatility_pct"] is None
     assert saved.evidence[1].data["change"] == -0.2
     assert len(saved.evidence[1].data["values"]) == 2
     assert macro_calls[1]["observation_start"] == ["2025-01-06"]

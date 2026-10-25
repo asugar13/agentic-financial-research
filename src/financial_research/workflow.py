@@ -1,6 +1,8 @@
 """The graph owns execution and limits; the model owns research choices."""
 
 from collections.abc import Callable
+from functools import wraps
+import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -11,6 +13,8 @@ from financial_research.reporting import validate_citations
 from financial_research.research_model import ResearchModel
 from financial_research.state import ResearchState
 from financial_research.tools import execute_tool
+
+StepObserver = Callable[[str, ResearchState, float, str | None], None]
 
 
 def write_reviewed_report(state: ResearchState, model: ResearchModel) -> ResearchReport:
@@ -33,7 +37,23 @@ def write_reviewed_report(state: ResearchState, model: ResearchModel) -> Researc
 def build_graph(
     model: ResearchModel, on_event: Callable[[str], None] | None = None,
     *, review: bool = False,
+    on_step: StepObserver | None = None,
 ) -> CompiledStateGraph:
+    def observed(node: Callable[[ResearchState], dict[str, Any]]) -> Callable[[ResearchState], dict[str, Any]]:
+        @wraps(node)
+        def run(state: ResearchState) -> dict[str, Any]:
+            started = time.perf_counter()
+            try:
+                update = node(state)
+            except Exception as exc:
+                if on_step:
+                    on_step(node.__name__, state, time.perf_counter() - started, f"{type(exc).__name__}: {exc}")
+                raise
+            if on_step:
+                on_step(node.__name__, state.model_copy(update=update), time.perf_counter() - started, None)
+            return update
+        return run
+
     def log(state: ResearchState, message: str) -> list[str]:
         if on_event:
             on_event(message)
@@ -82,14 +102,19 @@ def build_graph(
 
     def report(state: ResearchState) -> dict[str, Any]:
         report_state = state.model_copy(deep=True)
-        if review:
-            final_report = write_reviewed_report(report_state, model)
-            assert report_state.critique is not None
-            review_result = "revised once" if report_state.critique.issues else "no revision requested"
-        else:
-            final_report = model.write_report(report_state)
-            review_result = "review disabled"
-        validate_citations(final_report, state)
+        try:
+            if review:
+                final_report = write_reviewed_report(report_state, model)
+                assert report_state.critique is not None
+                review_result = "revised once" if report_state.critique.issues else "no revision requested"
+            else:
+                final_report = model.write_report(report_state)
+                review_result = "review disabled"
+            validate_citations(final_report, state)
+        except Exception:
+            # Preserve partial review artifacts for the failure snapshot.
+            state.draft_report, state.critique = report_state.draft_report, report_state.critique
+            raise
         return {
             "draft_report": report_state.draft_report,
             "critique": report_state.critique,
@@ -101,10 +126,10 @@ def build_graph(
         return "report" if state.stop_reason else "execute"
 
     builder = StateGraph(ResearchState)
-    builder.add_node("plan", plan)
-    builder.add_node("decide", decide)
-    builder.add_node("execute", execute)
-    builder.add_node("report", report)
+    builder.add_node("plan", observed(plan))
+    builder.add_node("decide", observed(decide))
+    builder.add_node("execute", observed(execute))
+    builder.add_node("report", observed(report))
     builder.add_edge(START, "plan")
     builder.add_edge("plan", "decide")
     builder.add_conditional_edges("decide", route, {"report": "report", "execute": "execute"})
@@ -121,9 +146,10 @@ def run_research(
     price_request: HistoricalPriceRequest | None = None,
     review: bool = False,
     on_event: Callable[[str], None] | None = None,
+    on_step: StepObserver | None = None,
 ) -> ResearchState:
     initial = ResearchState(question=question, max_tool_calls=max_tool_calls, price_request=price_request)
-    graph = build_graph(model, on_event, review=review)
+    graph = build_graph(model, on_event, review=review, on_step=on_step)
     # At most 1 plan + (N executions + N+1 decisions) + 1 report.
     result = graph.invoke(initial, config={"recursion_limit": 2 * max_tool_calls + 6})
     return ResearchState.model_validate(result)
