@@ -57,8 +57,9 @@ def test_native_tool_calls_drive_the_graph_without_real_network_requests():
             "claims": [{"statement": "Fictional commentary mentions solar demand.", "kind": "observation", "evidence_ids": ["E001"]}],
             "limitations": ["Synthetic data; no causal conclusion."],
         }),
+        structured_output({"issues": []}),
     ])
-    state = run_research("Investigate silver and gold in the fixture period.", model)
+    state = run_research("Investigate silver and gold in the fixture period.", model, review=True)
     assert [call.action.tool for call in state.tool_calls] == ["search_news", "get_market_prices"]
     assert len(state.evidence) == 4
     assert state.report.title == "Limited fixture report"
@@ -108,3 +109,22 @@ def test_real_data_scope_uses_the_price_and_macro_catalog_and_instructions():
     assert "REAL Yahoo Finance" in requests[0]["instructions"]
     assert "FRED" in requests[0]["instructions"]
     assert json.loads(requests[0]["input"])["price_request"]["start_date"] == "2025-01-06"
+
+
+def test_structured_review_and_revision_receive_the_draft_and_critique():
+    draft = ResearchReport(title="Draft", claims=[], limitations=["No evidence collected."])
+    corrected = ResearchReport(title="Revised", claims=[], limitations=["Price retrieval failed; no findings are available."])
+    model, requests = model_with_outputs([
+        structured_output({"issues": ["Explain the failed retrieval in limitations."]}),
+        structured_output(corrected.model_dump(mode="json")),
+    ])
+    state = ResearchState(question="Inspect prices.", draft_report=draft)
+    state.critique = model.review_report(state)
+    report = model.revise_report(state)
+    assert report == corrected
+    assert state.draft_report == draft
+    assert json.loads(requests[0]["input"])["draft_report"] == draft.model_dump(mode="json")
+    revision_context = json.loads(requests[1]["input"])
+    assert revision_context["critique"] == state.critique.model_dump(mode="json")
+    assert revision_context["evidence"] == []
+    assert not any(request.get("tools") for request in requests)

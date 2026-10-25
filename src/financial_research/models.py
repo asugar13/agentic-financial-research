@@ -144,3 +144,10 @@ class ResearchReport(Model):
     title: Text
     claims: list[Claim]
     limitations: list[Text] = Field(min_length=1)
+
+
+class ReportCritique(Model):
+    issues: list[Text] = Field(
+        max_length=5,
+        description="Specific corrections grounded in the supplied evidence; empty when no revision is needed.",
+    )

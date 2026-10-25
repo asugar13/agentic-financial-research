@@ -49,8 +49,9 @@ def test_native_local_tool_calls_drive_the_existing_graph(monkeypatch):
             "claims": [{"statement": "Synthetic silver returned 20%.", "kind": "observation", "evidence_ids": ["E001"]}],
             "limitations": ["Synthetic data only."],
         }),
+        _text({"issues": []}),
     ])
-    state = run_research("Investigate fixture silver returns.", OllamaModel())
+    state = run_research("Investigate fixture silver returns.", OllamaModel(), review=True)
     assert len(state.tool_calls) == 1
     assert len(state.evidence) == 1
     assert state.stop_reason.startswith("model_finished:")
@@ -119,15 +120,19 @@ def test_cli_uses_local_model_without_openai_credentials(monkeypatch, tmp_path, 
     assert main(["Compare IBM prices.", "--symbols", "IBM", "--start-date", "2025-01-06",
                  "--end-date", "2025-01-07", "--output", str(tmp_path), *arguments]) == 0
     assert all(request["model"] == expected for request in requests)
+    assert len(requests) == 3  # Plan, finish decision, and report; review is disabled by default.
+    saved = ResearchState.model_validate_json(next(tmp_path.glob("*/state.json")).read_text())
+    assert saved.draft_report is None and saved.critique is None
     assert len(list(tmp_path.glob("*/report.md"))) == 1
 
 
 @pytest.mark.parametrize("mode_arguments", [[], ["--mode", "ollama"]])
-def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path, mode_arguments):
+@pytest.mark.parametrize("review", [False, True])
+def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report(monkeypatch, tmp_path, mode_arguments, review):
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("FRED_API_KEY", "test-only-fred-key")
-    requests = _server(monkeypatch, [
+    messages = [
         _text({"objectives": ["Compare actual prices and real yields."], "assumptions": ["Endpoint comparisons cannot establish causation."]}),
         _call("get_market_prices", symbols=["ibm"], start_date="2025-01-06", end_date="2025-01-07",
               rationale="Retrieve the scoped price evidence."),
@@ -141,7 +146,10 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
             ],
             "limitations": ["Endpoint comparisons cannot establish the cause of a market move."],
         }),
-    ])
+    ]
+    if review:
+        messages.append(_text({"issues": []}))
+    requests = _server(monkeypatch, messages)
     fetched = []
 
     class Ticker:
@@ -176,7 +184,7 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
     assert main([
         "Compare IBM closing prices.", *mode_arguments,
         "--symbols", "IBM", "--start-date", "2025-01-06", "--end-date", "2025-01-07",
-        "--output", str(tmp_path),
+        "--output", str(tmp_path), *(["--review"] if review else []),
     ]) == 0
     saved = ResearchState.model_validate_json(next(tmp_path.glob("*/state.json")).read_text())
     report = next(tmp_path.glob("*/report.md")).read_text()
@@ -202,3 +210,13 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
     assert "values" not in context["evidence"][1]["data"]
     assert "values" not in context["tool_calls"][1]["result"]["observations"][0]["data"]
     assert context["evidence"][1]["data"]["change"] == -0.2
+    assert len(requests) == (6 if review else 5)
+    if review:
+        review_context = json.loads(requests[-1]["messages"][1]["content"])
+        assert review_context["draft_report"] == saved.draft_report.model_dump(mode="json")
+        assert "prices" not in review_context["evidence"][0]["data"]
+        assert "values" not in review_context["tool_calls"][1]["result"]["observations"][0]["data"]
+        assert "tools" not in requests[-1]
+        assert saved.critique.issues == []
+    else:
+        assert saved.draft_report is None and saved.critique is None

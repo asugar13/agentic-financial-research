@@ -33,6 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="Model provider (default: ollama); demo runs scripted synthetic fixtures offline")
     parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL (default qwen2.5:7b) or OPENAI_MODEL")
     parser.add_argument("--max-tool-calls", type=_budget, default=4)
+    parser.add_argument("--review", action="store_true", help="Critique the draft and revise at most once (disabled by default)")
     parser.add_argument("--symbols", nargs="+", help="Allowed provider symbols for real-price research")
     parser.add_argument("--start-date", type=date.fromisoformat)
     parser.add_argument("--end-date", type=date.fromisoformat)
@@ -77,6 +78,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         state = run_research(
             question, model, max_tool_calls=args.max_tool_calls, price_request=price_request,
+            review=args.review,
             on_event=lambda message: print(message, flush=True),
         )
         markdown = render_report(state)

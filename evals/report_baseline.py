@@ -17,6 +17,7 @@ from financial_research.models import Evidence, HistoricalPriceRequest, Model, R
 from financial_research.ollama_model import OllamaModel
 from financial_research.reporting import render_report, validate_citations
 from financial_research.state import ResearchState
+from financial_research.workflow import write_reviewed_report
 
 CASES_PATH = Path(__file__).with_name("report_cases.json")
 
@@ -74,6 +75,10 @@ def evaluate_case(suite: Suite, case: Case, write_report: Callable[[ResearchStat
         }
     except (ValueError, RuntimeError, OSError) as exc:
         result["error"] = str(exc)
+    if state.draft_report is not None:
+        result["draft_report"] = state.draft_report.model_dump(mode="json")
+    if state.critique is not None:
+        result["critique"] = state.critique.model_dump(mode="json")
     result["seconds"] = round(time.perf_counter() - started, 3)
     return result
 
@@ -112,6 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run.add_argument("--case", action="append", help="Case ID to run; repeat the flag to select several")
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--output", type=Path, default=Path("runs/evals"))
+    run.add_argument("--review", action="store_true", help="Critique each draft and revise at most once")
     score = commands.add_parser("summarize", help="Summarize results after manually grading their checklist")
     score.add_argument("results", type=Path)
     args = parser.parse_args(argv)
@@ -133,13 +139,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     record = {
         "model": args.model, "git_revision": revision.stdout.strip(),
-        "cases_sha256": hashlib.sha256(raw).hexdigest(), "repeats": args.repeats, "results": [],
+        "cases_sha256": hashlib.sha256(raw).hexdigest(), "repeats": args.repeats, "review": args.review, "results": [],
     }
     model = OllamaModel(args.model)
-    print(f"Report-only evaluation | local model: {args.model} | {output}", flush=True)
+
+    def write_report(state: ResearchState) -> ResearchReport:
+        if args.review:
+            return write_reviewed_report(state, model)
+        return model.write_report(state)
+
+    print(f"Report evaluation | review: {'on' if args.review else 'off'} | local model: {args.model} | {output}", flush=True)
     for case in cases:
         for repeat in range(1, args.repeats + 1):
-            result = evaluate_case(suite, case, model.write_report)
+            result = evaluate_case(suite, case, write_report)
             result["repeat"] = repeat
             record["results"].append(result)
             # Preserve completed results even if a later model request fails or is interrupted.
