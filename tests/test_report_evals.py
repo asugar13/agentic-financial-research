@@ -124,3 +124,48 @@ def test_malformed_manual_grades_are_not_treated_as_passes(suite):
     result["manual_checks"][0]["passed"] = "false"
     with pytest.raises(ValueError, match="JSON true, false, or null"):
         status(result)
+
+
+@pytest.mark.parametrize("final_id, expected_status", [("E001", "PENDING"), ("E999", "FAIL"), (None, "ERROR")])
+def test_reviewed_eval_preserves_draft_critique_and_final_failures(monkeypatch, tmp_path, final_id, expected_status):
+    requests = []
+    critique = {"issues": ["Replace invented citation E999 with the collected evidence E001."]}
+    outputs = iter([
+        _report("E999").model_dump(mode="json"), critique,
+        None if final_id is None else _report(final_id).model_dump(mode="json"),
+    ])
+
+    def respond(request, timeout):
+        assert request.full_url == ollama_model.URL
+        requests.append(json.loads(request.data))
+        output = next(outputs)
+        if output is None:
+            raise URLError("Revision connection failed")
+        return io.BytesIO(json.dumps({
+            "message": {"content": json.dumps(output)}, "done": True, "done_reason": "stop",
+        }).encode())
+
+    monkeypatch.setattr(ollama_model, "urlopen", respond)
+    exit_code = main(["run", "--review", "--case", "price-facts", "--output", str(tmp_path)])
+    record = json.loads(next(tmp_path.glob("*/results.json")).read_text())
+    result = record["results"][0]
+    assert record["review"] is True
+    assert status(result) == expected_status
+    assert exit_code == (0 if expected_status == "PENDING" else 1)
+    assert len(requests) == 3 and all("tools" not in request for request in requests)
+    assert result["draft_report"]["claims"][0]["evidence_ids"] == ["E999"]
+    assert "unknown evidence: E999" in result["critique"]["issues"][0]
+    assert result["critique"]["issues"][1:] == critique["issues"]
+    assert result["input_state"]["draft_report"] is None
+    assert all(check["passed"] is None for check in result["manual_checks"])
+    draft_context, review_context, revision_context = [
+        json.loads(request["messages"][1]["content"]) for request in requests
+    ]
+    assert "draft_report" not in draft_context and "critique" not in draft_context
+    assert review_context["draft_report"] == result["draft_report"]
+    assert revision_context["critique"] == result["critique"]
+    assert revision_context["evidence"] == draft_context["evidence"]
+    if final_id is not None:
+        assert result["report"]["claims"][0]["evidence_ids"] == [final_id]
+    else:
+        assert result["report"] is None and "Cannot reach Ollama" in result["error"]

@@ -3,6 +3,9 @@
 This evaluates the current **report writer**, using seven fixed evidence cases.
 It calls local Qwen directly through `OllamaModel.write_report()`. Planning, tool
 selection, the research graph, Yahoo, and FRED are outside this evaluation.
+With `--review`, it runs the same draft/critique/optional-revision sequence enabled
+by `--review` in the normal CLI, still without evidence gathering. Both commands
+leave review disabled by default.
 
 Start with [`report_cases.json`](report_cases.json): questions and grading criteria
 are under `cases`. The shared evidence contains summary snapshots from the live
@@ -27,6 +30,18 @@ Run from the repository root with Ollama running and the model installed:
 ```sh
 .venv/bin/python -m evals.report_baseline run
 ```
+
+To compare the bounded critique and revision with that baseline:
+
+```sh
+.venv/bin/python -m evals.report_baseline run --review
+```
+
+This makes one draft request, one critique request, and at most one revision
+request per case. The cases, saved evidence, and baseline writer prompt are the
+same. `results.json` records whether review was enabled and saves the draft,
+critique, and final output, including invalid output for inspection. A reviewer
+requesting no corrections does not count as a semantic pass; grading is unchanged.
 
 `--model` overrides `OLLAMA_MODEL`, whose fallback is `qwen2.5:7b`. Use
 `--case price-facts` for one case, or `--repeats 2` to observe variation across

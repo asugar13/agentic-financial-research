@@ -24,7 +24,8 @@ only this question, so it cannot silently apply the canned answer to an unrelate
 Each run prints its decisions and creates a fresh `runs/<run-id>/` directory:
 
 - `report.md`: findings, limitations, and collected sources.
-- `state.json`: plan, actions, tool results, evidence, short decision rationales, and stop reason.
+- `state.json`: plan, actions, tool results, evidence, short decision rationales,
+  stop reason, and final report. Draft and critique fields are populated with `--review`.
 
 The normal demo makes three tool calls, collects five evidence items, and stops
 because the scripted model selects `finish_research`.
@@ -47,13 +48,24 @@ flowchart TD
     plan --> decide
     decide -->|typed data-tool request| execute
     execute -->|normalized result and evidence| decide
-    decide -->|finish or call budget reached| report
+    decide -->|finish or call budget reached| report["report: write → optional review → validate"]
     report --> END
 ```
 
 The graph owns routing, tool execution, evidence IDs, and the call budget. The model
 owns the research plan, next-action selection, and report content. Each decision
 receives the updated state, so it can respond to the last tool result.
+
+Inside the `report` node, the model writes a report and Python validates its
+citation IDs. **Review is disabled by default.** Add `--review` to enable a draft,
+critique against the collected evidence, and at most one revision when the critique
+lists corrections. The existing Python citation check also adds a correction for
+invented IDs, even if the model reviewer misses them. There are no additional
+tool calls or review loops, and final citation IDs must pass validation before
+the report is saved. Inspect `draft_report`, `critique.issues`, and `report` in
+`state.json` to compare the stages. Enabling review adds one model review request
+and, when needed, one revision request; these do not consume the data-tool budget.
+The scripted demo returns an empty critique without an LLM call when review is enabled.
 
 `DemoModel` is intentionally scripted; it teaches graph execution, not autonomous
 research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
@@ -65,7 +77,8 @@ It excludes fixture news and never falls back to synthetic observations.
 ## Read the code in this order
 
 1. [`state.py`](src/financial_research/state.py): the research snapshot shared by nodes.
-2. [`workflow.py`](src/financial_research/workflow.py): four small nodes and conditional routing.
+2. [`workflow.py`](src/financial_research/workflow.py): four nodes, conditional routing,
+   and the bounded `write_reviewed_report()` sequence inside the report node.
 3. [`models.py`](src/financial_research/models.py): typed actions, results, evidence, and report contracts.
 4. [`tools.py`](src/financial_research/tools.py): fixture data, calculated returns, and explicit unavailable-data results.
 5. [`research_model.py`](src/financial_research/research_model.py): the model interface and scripted demo.
@@ -79,6 +92,8 @@ With Ollama running and `qwen2.5:7b` installed:
   "How did AAPL closing prices change during 2024?" \
   --symbols AAPL --start-date 2024-01-01 --end-date 2024-12-31
 ```
+
+Append `--review` to enable the experimental critique and revision step.
 
 This calls your local server at `http://127.0.0.1:11434/api/chat`. No OpenAI credits
 or additional Python dependencies are needed. Yahoo prices need no API key; FRED
@@ -277,10 +292,9 @@ through mocked HTTP transports. Real-price tests exercise the full CLI/model/too
 evidence/report path, enforce scope and fixture isolation, and check that context
 summaries preserve full saved data. The automated tests make no live model requests.
 Separate local smoke tests verified both fixture research and Qwen fetching real
-AAPL/MSFT prices for 2020–2024 through Yahoo Finance, then writing a cited report. OpenAI live verification
-and research-quality evaluation remain outstanding. An earlier fixture report
-omitted collected counterevidence, illustrating a quality issue for the later
-evaluation/critic pass.
+AAPL/MSFT prices for 2020–2024 through Yahoo Finance, then writing a cited report.
+OpenAI live verification remains outstanding. The fixed-evidence report evals
+below assess report quality separately from these integration checks.
 
 ## Evaluate report quality locally
 
@@ -296,6 +310,16 @@ It saves reports, runtime, automatic citation/schema checks, and manual grading
 criteria under `runs/evals/`. Semantic grades remain pending until reviewed.
 It needs local Ollama but makes no Yahoo, FRED, or OpenAI requests.
 
+Compare the same cases with critique and at most one revision:
+
+```sh
+.venv/bin/python -m evals.report_baseline run --review
+```
+
+The reviewed run also saves each draft and critique in `results.json`. The
+critique guides revision; it does not grade the eval or turn pending criteria
+into passes. Compare the final reports against the same grading criteria.
+
 ## Boundaries of this pass
 
 The citation check rejects unknown evidence IDs, and every report claim must have
@@ -304,11 +328,13 @@ claim. Uncited factual assertions in report titles or limitations are constraine
 by prompts, not semantic validation. The evaluation baseline uses explicit manual
 criteria to assess whether reports stay within their evidence.
 
-There is no critic/revision loop, checkpoint/resume support, tracing setup, or
-quant workflow yet. The event list is a small execution log, not an observability
-platform. Failed model runs print an error; only successful runs save artifacts.
-Real prices and macro data are connected; real news is the next checkpoint within
-pass 2. Endpoint comparisons can establish what changed, but cannot establish
+The bounded critique can still miss errors or introduce regressions; it is not
+a guarantee that claims are supported. There is no checkpoint/resume support,
+tracing setup, or quant workflow yet. The event list is a small execution log,
+not an observability platform. Failed research runs print an error; only
+successful research runs save artifacts. The eval runner retains failed outputs.
+Real prices and macro data are connected; real news remains deferred.
+Endpoint comparisons can establish what changed, but cannot establish
 the cause of a market move. Model context does not include the full time series,
 so deeper statistical analysis needs a separate quantitative tool.
 

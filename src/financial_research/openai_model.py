@@ -10,10 +10,11 @@ from pydantic import BaseModel
 from financial_research.models import (
     ACTION_ADAPTER,
     Action,
+    ReportCritique,
     ResearchPlan,
     ResearchReport,
 )
-from financial_research.research_model import ModelError, instructions, tool_definitions
+from financial_research.research_model import REVIEW_TASK, REVISION_TASK, ModelError, instructions, tool_definitions
 from financial_research.state import ResearchState
 
 T = TypeVar("T", bound=BaseModel)
@@ -86,3 +87,9 @@ class OpenAIModel:
             "Acknowledge budget exhaustion, tool failures, and the configured source limitations.",
             ResearchReport,
         )
+
+    def review_report(self, state: ResearchState) -> ReportCritique:
+        return self._structured(state, REVIEW_TASK, ReportCritique)
+
+    def revise_report(self, state: ResearchState) -> ResearchReport:
+        return self._structured(state, REVISION_TASK, ResearchReport)

@@ -28,11 +28,17 @@ def test_news_query_with_no_matches_returns_no_evidence():
     assert result.observations == []
 
 
-def test_cli_saves_report_and_roundtrippable_state(tmp_path, capsys):
-    assert main(["--mode", "demo", "--output", str(tmp_path)]) == 0
+@pytest.mark.parametrize("review", [False, True])
+def test_cli_saves_report_and_roundtrippable_state(tmp_path, capsys, review):
+    assert main(["--mode", "demo", "--output", str(tmp_path), *(["--review"] if review else [])]) == 0
     output = next(tmp_path.iterdir())
     saved = ResearchState.model_validate_json((output / "state.json").read_text())
     assert len(saved.tool_calls) == 3
+    if review:
+        assert saved.draft_report == saved.report
+        assert saved.critique.issues == []
+    else:
+        assert saved.draft_report is None and saved.critique is None
     assert "SYNTHETIC FIXTURE DATA" in (output / "report.md").read_text()
     assert "finish_research" in capsys.readouterr().out
     # Reusing the output parent creates another run rather than overwriting it.

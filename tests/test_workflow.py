@@ -9,6 +9,7 @@ from financial_research.models import (
     MacroAction,
     NewsAction,
     PriceAction,
+    ReportCritique,
     ResearchReport,
 )
 from financial_research.reporting import render_report
@@ -69,7 +70,8 @@ def test_model_can_change_tool_order_after_a_failed_call():
     assert state.stop_reason.startswith("model_finished:")
 
 
-def test_unknown_citations_are_rejected():
+@pytest.mark.parametrize("review", [False, True])
+def test_unknown_citations_are_rejected(review):
     class InvalidWriter(DemoModel):
         def write_report(self, state):
             return ResearchReport(
@@ -79,7 +81,7 @@ def test_unknown_citations_are_rejected():
             )
 
     with pytest.raises(ValueError, match="unknown evidence: E999"):
-        run_research(DEMO_QUESTION, InvalidWriter())
+        run_research(DEMO_QUESTION, InvalidWriter(), review=review)
 
 
 def test_a_claim_cannot_omit_citations():
@@ -124,7 +126,7 @@ def test_real_mode_tool_failure_is_recorded_without_fixture_fallback(monkeypatch
     from financial_research import prices
     from financial_research.models import ResearchPlan, ToolResult
 
-    class PriceOnlyModel:
+    class PriceOnlyModel(DemoModel):
         def make_plan(self, state):
             return ResearchPlan(objectives=["Retrieve the scoped prices."], assumptions=[])
 
@@ -181,3 +183,75 @@ def test_real_macro_failure_is_recorded_without_fixture_fallback(monkeypatch):
     assert len(state.tool_calls) == 1
     assert "FRED_API_KEY" in state.tool_calls[0].result.error
     assert "No supported findings" in render_report(state)
+
+
+@pytest.mark.parametrize("issues", [[], ["Correct the draft title."]])
+@pytest.mark.parametrize("review", [False, True])
+def test_review_is_optional_and_revision_only_follows_issues(issues, review):
+    stages = []
+
+    class ReviewedModel(DemoModel):
+        def write_report(self, state):
+            stages.append("draft")
+            assert state.draft_report is None and state.critique is None
+            return super().write_report(state)
+
+        def review_report(self, state):
+            stages.append("review")
+            assert state.draft_report is not None and state.critique is None
+            return ReportCritique(issues=issues)
+
+        def revise_report(self, state):
+            stages.append("revise")
+            assert state.critique.issues == issues
+            return state.draft_report.model_copy(update={"title": "Corrected fixture report"})
+
+    state = run_research(DEMO_QUESTION, ReviewedModel(), max_tool_calls=1, review=review)
+    expected = ["draft", "review", "revise"] if issues else ["draft", "review"]
+    assert stages == (expected if review else ["draft"])
+    if review:
+        assert state.draft_report.title == "Silver versus gold: fixture demonstration"
+        assert state.critique.issues == issues
+    else:
+        assert state.draft_report is None and state.critique is None
+    assert state.report.title == (
+        "Corrected fixture report" if review and issues else "Silver versus gold: fixture demonstration"
+    )
+    assert len(state.tool_calls) == 1 and len(state.evidence) == 2
+    assert state.stop_reason == "tool_budget_exhausted"
+
+
+@pytest.mark.parametrize("repaired", [True, False])
+def test_invalid_draft_can_be_repaired_but_invalid_final_report_is_rejected(repaired):
+    class CitationRepairModel(DemoModel):
+        def write_report(self, state):
+            draft = super().write_report(state)
+            draft.claims[0].evidence_ids = ["E999"]
+            return draft
+
+        def review_report(self, state):
+            assert state.draft_report.claims[0].evidence_ids == ["E999"]
+            return ReportCritique(issues=[])  # The model reviewer misses the citation error.
+
+        def revise_report(self, state):
+            assert "unknown evidence: E999" in state.critique.issues[0]
+            if repaired:
+                return DemoModel().write_report(state)
+            return state.draft_report
+
+    if repaired:
+        state = run_research(DEMO_QUESTION, CitationRepairModel(), max_tool_calls=1, review=True)
+        assert state.draft_report.claims[0].evidence_ids == ["E999"]
+        assert state.report.claims[0].evidence_ids == ["E001"]
+    else:
+        with pytest.raises(ValueError, match="unknown evidence: E999"):
+            run_research(DEMO_QUESTION, CitationRepairModel(), max_tool_calls=1, review=True)
+
+
+def test_review_failure_does_not_publish_an_unreviewed_draft():
+    class UnavailableReviewer(DemoModel):
+        def review_report(self, state):
+            raise RuntimeError("Reviewer unavailable.")
+
+    with pytest.raises(RuntimeError, match="Reviewer unavailable"):
+        run_research(DEMO_QUESTION, UnavailableReviewer(), review=True)

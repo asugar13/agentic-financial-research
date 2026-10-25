@@ -6,15 +6,33 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from financial_research.models import Evidence, FinishAction, HistoricalPriceRequest, ToolCall
+from financial_research.models import Evidence, FinishAction, HistoricalPriceRequest, ReportCritique, ResearchReport, ToolCall
 from financial_research.reporting import validate_citations
 from financial_research.research_model import ResearchModel
 from financial_research.state import ResearchState
 from financial_research.tools import execute_tool
 
 
+def write_reviewed_report(state: ResearchState, model: ResearchModel) -> ResearchReport:
+    """Save the draft and critique on state, then return a final report after at most one revision."""
+    state.draft_report = model.write_report(state)
+    state.critique = model.review_report(state)
+    try:
+        validate_citations(state.draft_report, state)
+    except ValueError as exc:
+        if state.evidence:
+            correction = f"{exc}. Use only collected evidence IDs: {', '.join(item.id for item in state.evidence)}."
+        else:
+            correction = f"{exc}. No evidence was collected: return claims=[] and explain retrieval failures in limitations."
+        state.critique = ReportCritique(issues=[correction, *state.critique.issues[:4]])
+    if state.critique.issues:
+        return model.revise_report(state)
+    return state.draft_report
+
+
 def build_graph(
     model: ResearchModel, on_event: Callable[[str], None] | None = None,
+    *, review: bool = False,
 ) -> CompiledStateGraph:
     def log(state: ResearchState, message: str) -> list[str]:
         if on_event:
@@ -63,11 +81,20 @@ def build_graph(
         }
 
     def report(state: ResearchState) -> dict[str, Any]:
-        final_report = model.write_report(state)
+        report_state = state.model_copy(deep=True)
+        if review:
+            final_report = write_reviewed_report(report_state, model)
+            assert report_state.critique is not None
+            review_result = "revised once" if report_state.critique.issues else "no revision requested"
+        else:
+            final_report = model.write_report(report_state)
+            review_result = "review disabled"
         validate_citations(final_report, state)
         return {
+            "draft_report": report_state.draft_report,
+            "critique": report_state.critique,
             "report": final_report,
-            "events": log(state, f"report: validated citations for {len(final_report.claims)} claim(s)."),
+            "events": log(state, f"report: {review_result}; validated citations for {len(final_report.claims)} claim(s)."),
         }
 
     def route(state: ResearchState) -> str:
@@ -92,10 +119,11 @@ def run_research(
     *,
     max_tool_calls: int = 4,
     price_request: HistoricalPriceRequest | None = None,
+    review: bool = False,
     on_event: Callable[[str], None] | None = None,
 ) -> ResearchState:
     initial = ResearchState(question=question, max_tool_calls=max_tool_calls, price_request=price_request)
-    graph = build_graph(model, on_event)
+    graph = build_graph(model, on_event, review=review)
     # At most 1 plan + (N executions + N+1 decisions) + 1 report.
     result = graph.invoke(initial, config={"recursion_limit": 2 * max_tool_calls + 6})
     return ResearchState.model_validate(result)
