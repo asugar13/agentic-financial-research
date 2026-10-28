@@ -34,6 +34,11 @@ def test_cli_saves_report_and_roundtrippable_state(tmp_path, capsys, review):
     output = next(tmp_path.iterdir())
     saved = ResearchState.model_validate_json((output / "state.json").read_text())
     assert len(saved.tool_calls) == 3
+    diagnostics = json.loads((output / "run.json").read_text())
+    assert diagnostics["status"] == "succeeded"
+    assert diagnostics["tool_calls"] == 3 and diagnostics["tool_failures"] == 0
+    assert diagnostics["steps"][0]["stage"] == "plan"
+    assert all(step["seconds"] >= 0 for step in diagnostics["steps"])
     if review:
         assert saved.draft_report == saved.report
         assert saved.critique.issues == []
@@ -53,10 +58,48 @@ def test_cli_rejects_invalid_inputs(arguments):
     assert error.value.code == 2
 
 
-def test_demo_rejects_other_questions_without_creating_artifacts(tmp_path, capsys):
+def test_demo_rejection_preserves_failure_diagnostics(tmp_path, capsys):
     assert main(["Why did oil fall?", "--mode", "demo", "--output", str(tmp_path)]) == 1
-    assert list(tmp_path.iterdir()) == []
+    output = next(tmp_path.iterdir())
+    diagnostics = json.loads((output / "run.json").read_text())
+    assert diagnostics["status"] == "failed"
+    assert diagnostics["steps"][-1]["stage"] == "plan"
+    assert diagnostics["steps"][-1]["status"] == "failed"
+    assert ResearchState.model_validate_json((output / "state.json").read_text()).question == "Why did oil fall?"
+    assert not (output / "report.md").exists()
     assert "scripted demo supports only" in capsys.readouterr().err
+
+
+def test_failed_report_keeps_collected_evidence_and_records_failed_stage(monkeypatch, tmp_path):
+    from financial_research.research_model import DemoModel
+
+    def unavailable(self, state):
+        raise RuntimeError("Report model unavailable")
+
+    monkeypatch.setattr(DemoModel, "write_report", unavailable)
+    assert main(["--mode", "demo", "--output", str(tmp_path)]) == 1
+    output = next(tmp_path.iterdir())
+    saved = ResearchState.model_validate_json((output / "state.json").read_text())
+    diagnostics = json.loads((output / "run.json").read_text())
+    assert len(saved.evidence) == 5 and len(saved.tool_calls) == 3
+    assert saved.report is None and not (output / "report.md").exists()
+    assert diagnostics["steps"][-1]["stage"] == "report"
+    assert diagnostics["steps"][-1]["status"] == "failed"
+    assert "Report model unavailable" in diagnostics["error"]
+
+
+def test_review_failure_preserves_the_draft_without_publishing_it(monkeypatch, tmp_path):
+    from financial_research.research_model import DemoModel
+
+    def unavailable(self, state):
+        raise RuntimeError("Reviewer unavailable")
+
+    monkeypatch.setattr(DemoModel, "review_report", unavailable)
+    assert main(["--mode", "demo", "--review", "--output", str(tmp_path)]) == 1
+    output = next(tmp_path.iterdir())
+    state = ResearchState.model_validate_json((output / "state.json").read_text())
+    assert state.draft_report is not None and state.report is None
+    assert not (output / "report.md").exists()
 
 
 def test_llm_mode_requires_credentials(monkeypatch, capsys):

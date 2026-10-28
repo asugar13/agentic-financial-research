@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import time
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -11,9 +12,11 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from financial_research.models import HistoricalPriceRequest
+from financial_research.diagnostics import RunRecorder
 from financial_research.reporting import render_report
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.workflow import run_research
+from financial_research.state import ResearchState
 
 
 def _budget(value: str) -> int:
@@ -75,20 +78,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("install the optional provider with: python -m pip install -e '.[llm]'")
         model = OpenAIModel(model_name)
 
+    output = args.output / uuid4().hex
+    recorder = None
+    stage = "graph"
+    started = time.perf_counter()
     try:
+        initial = ResearchState(question=question, price_request=price_request, max_tool_calls=args.max_tool_calls)
+        recorder = RunRecorder(output, initial, mode=args.mode,
+                               model=getattr(model, "model", "scripted"), review=args.review)
         state = run_research(
             question, model, max_tool_calls=args.max_tool_calls, price_request=price_request,
             review=args.review,
             on_event=lambda message: print(message, flush=True),
+            on_step=recorder.step,
         )
+        stage, started = "artifacts", time.perf_counter()
         markdown = render_report(state)
-        output = args.output / uuid4().hex
-        output.mkdir(parents=True)
-        (output / "state.json").write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
         (output / "report.md").write_text(markdown, encoding="utf-8")
-    except (ValueError, RuntimeError, OSError) as exc:
-        print(f"Research failed: {exc}", file=sys.stderr)
-        return 1
+        recorder.step("artifacts", state, time.perf_counter() - started, None)
+        recorder.finish()
+    except (Exception, KeyboardInterrupt) as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        if recorder:
+            try:
+                if stage != "graph":
+                    recorder.step(stage, state, time.perf_counter() - started, error)
+                recorder.finish(error)
+            except OSError as save_error:
+                print(f"Could not finish saving diagnostics: {save_error}", file=sys.stderr)
+            print(f"Run artifacts: {output.resolve()}", file=sys.stderr)
+        print(f"Research failed: {error}", file=sys.stderr)
+        return 130 if isinstance(exc, KeyboardInterrupt) else 1
     print(f"\nReport: {(output / 'report.md').resolve()}")
     print(f"State:  {(output / 'state.json').resolve()}")
+    print(f"Run:    {(output / 'run.json').resolve()}")
     return 0

@@ -8,7 +8,7 @@ Real prices and macro data are available independently and through the graph in 
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
 `--mode demo` for the offline synthetic example. Real news integration is still pending.
 
-## Run the first pass
+## Run the offline demonstration
 
 The project environment has already been installed in `.venv` in this workspace:
 
@@ -26,6 +26,15 @@ Each run prints its decisions and creates a fresh `runs/<run-id>/` directory:
 - `report.md`: findings, limitations, and collected sources.
 - `state.json`: plan, actions, tool results, evidence, short decision rationales,
   stop reason, and final report. Draft and critique fields are populated with `--review`.
+- `run.json`: run status, model, source-code hash, Git revision, dependency versions,
+  stage timings, tool-failure counts, and any terminal error.
+
+The CLI saves the initial state and updates it after each graph stage. A failed
+run retains its last state and records the failed stage in `run.json`. If review
+fails, any completed draft and critique are retained without publishing a report.
+These snapshots support inspection; they do not implement checkpoint/resume.
+Invalid CLI arguments fail before creating a run. An interrupted process may leave
+status `running` if it was killed before it could finalize its diagnostics.
 
 The normal demo makes three tool calls, collects five evidence items, and stops
 because the scripted model selects `finish_research`.
@@ -82,6 +91,7 @@ It excludes fixture news and never falls back to synthetic observations.
 3. [`models.py`](src/financial_research/models.py): typed actions, results, evidence, and report contracts.
 4. [`tools.py`](src/financial_research/tools.py): fixture data, calculated returns, and explicit unavailable-data results.
 5. [`research_model.py`](src/financial_research/research_model.py): the model interface and scripted demo.
+6. [`diagnostics.py`](src/financial_research/diagnostics.py): state snapshots and run timings.
 
 ## Use local Qwen with Ollama
 
@@ -293,6 +303,9 @@ offline demo on pushes and pull requests. Its matrix runs two Ubuntu jobs: Pytho
 No model server or API keys are needed. Requiring these checks before merging is
 a repository setting. Live quality evals remain a separate local command.
 
+Diagnostic tests cover successful
+runs and failures that preserve collected evidence or a review draft.
+
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
 citation integrity, invalid requests, CLI artifacts, and both provider adapters
 through mocked HTTP transports. Real-price tests exercise the full CLI/model/tool/
@@ -336,15 +349,10 @@ by prompts, not semantic validation. The evaluation baseline uses explicit manua
 criteria to assess whether reports stay within their evidence.
 
 The bounded critique can still miss errors or introduce regressions; it is not
-a guarantee that claims are supported. There is no checkpoint/resume support,
-tracing setup, or quant workflow yet. The event list is a small execution log,
-not an observability platform. Failed research runs print an error; only
-successful research runs save artifacts. The eval runner retains failed outputs.
+a guarantee that claims are supported. Run diagnostics record stage timings and
+failure snapshots; checkpoint/resume and a hosted tracing backend are not implemented.
+The eval runner also retains failed outputs.
 Real prices and macro data are connected; real news remains deferred.
 Endpoint comparisons can establish what changed, but cannot establish
 the cause of a market move. Model context does not include the full time series,
 so deeper statistical analysis needs a separate quantitative tool.
-
-Later quantitative tools can produce evidence with additional experiment metadata.
-They will use a separate experiment workflow, rather than squeezing methodology
-and validation into this first research loop.
