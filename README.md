@@ -273,7 +273,8 @@ and the [LangGraph graph API](https://docs.langchain.com/oss/python/langgraph/gr
 
 ## Install and test
 
-Python 3.11 or later; this pass was tested with Python 3.14.3.
+Python 3.11 or later; tested locally with Python 3.14.3. The locked dependencies
+require Python 3.12+; on 3.11, omit `-c requirements.lock` to resolve compatible versions.
 
 ```sh
 python3 -m venv .venv
@@ -285,6 +286,12 @@ For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies a
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
 is a development dependency; the OpenAI SDK is an optional provider dependency.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
+
+[GitHub Actions](.github/workflows/tests.yml) runs the deterministic tests and an
+offline demo on pushes and pull requests. Its matrix runs two Ubuntu jobs: Python
+3.11 with compatible dependency resolution and Python 3.14 with locked dependencies.
+No model server or API keys are needed. Requiring these checks before merging is
+a repository setting. Live quality evals remain a separate local command.
 
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
 citation integrity, invalid requests, CLI artifacts, and both provider adapters
