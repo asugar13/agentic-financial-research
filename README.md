@@ -1,8 +1,8 @@
 # Agentic Financial Research
 
-An incremental platform combining market research with future quantitative experiments.
-The research agent has a CLI, a LangGraph loop, Pydantic state, and three fixture tools.
-Real prices and macro data are available independently and through the graph in pass 2.
+A financial research prototype combining local LLM orchestration with reproducible
+price analysis. Python, LangGraph, and Pydantic handle tool selection, bounded
+execution, evidence, and reports. Yahoo Finance supplies prices; FRED supplies macro data.
 
 **Local Ollama and real data are the defaults.** Provide a question, symbols, and
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
@@ -28,6 +28,8 @@ Each run prints its decisions and creates a fresh `runs/<run-id>/` directory:
   stop reason, and final report. Draft and critique fields are populated with `--review`.
 - `run.json`: run status, model, source-code hash, Git revision, dependency versions,
   stage timings, tool-failure counts, and any terminal error.
+- `quant.json` and `quant.md`: deterministic calculations when full daily prices
+  were collected. The endpoint-only synthetic demo does not create these files.
 
 The CLI saves the initial state and updates it after each graph stage. A failed
 run retains its last state and records the failed stage in `run.json`. If review
@@ -92,6 +94,56 @@ It excludes fixture news and never falls back to synthetic observations.
 4. [`tools.py`](src/financial_research/tools.py): fixture data, calculated returns, and explicit unavailable-data results.
 5. [`research_model.py`](src/financial_research/research_model.py): the model interface and scripted demo.
 6. [`diagnostics.py`](src/financial_research/diagnostics.py): state snapshots and run timings.
+7. [`quant.py`](src/financial_research/quant.py): price calculations, deterministic rendering, and offline replay.
+
+## Reproducible quantitative analysis
+
+Collect two price histories and write both the LLM research report and Python
+quant report in the same run directory:
+
+```sh
+.venv/bin/python -m financial_research \
+  "Compare AAPL and MSFT closing-price changes during 2024 using price data only." \
+  --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-12-31 \
+  --max-tool-calls 1
+```
+
+The quant step runs after research and uses the full saved price arrays. Its
+results are in `quant.md`; it does not change the LLM-written `report.md` or supply
+new evidence to the model. One collected symbol gives per-asset statistics;
+correlations require at least two collected price histories.
+
+Replay a saved run without Ollama or network access:
+
+```sh
+.venv/bin/python -m financial_research.quant runs/<run-id>/state.json
+```
+
+Each replay creates a fresh directory under `runs/quant/`. Identical saved
+evidence and parameters produce identical `quant.json` contents. The file records
+an input hash, method version, settings, source IDs, per-interval returns, and
+every trailing correlation window. `--window` defaults to 20 matched returns;
+`--periods-per-year` defaults to 252 and controls volatility annualization.
+
+The calculation uses:
+
+- Simple close-price return: `close[t] / close[t-1] - 1`.
+- Annualized volatility: sample standard deviation of observed returns times
+  `sqrt(periods_per_year)`, displayed as a percentage.
+- Pearson correlation of returns whose **start and end dates both match**.
+  Pairing requires equal, known exchange time zones. Trailing windows use only
+  observations through their end date; missing prices are never filled.
+
+Insufficient observations and constant returns produce explicit unavailable
+statistics. Gaps can create multi-session returns, making volatility annualization
+approximate. Provider Close excludes additional dividend adjustment, so these
+are not total returns. Correlation is descriptive, not causal. This is historical
+price analysis, not a trading-strategy backtest; source revisions prevent treating
+the downloaded history as a point-in-time dataset.
+
+The calculations use Python's documented [sample standard deviation and Pearson
+correlation](https://docs.python.org/3.11/library/statistics.html). No new runtime
+dependencies are required.
 
 ## Use local Qwen with Ollama
 
@@ -303,7 +355,9 @@ offline demo on pushes and pull requests. Its matrix runs two Ubuntu jobs: Pytho
 No model server or API keys are needed. Requiring these checks before merging is
 a repository setting. Live quality evals remain a separate local command.
 
-Diagnostic tests cover successful
+Quant tests cover known numerical results, missing-date alignment, insufficient
+and constant returns, reproducible replay, and unchanged historical rolling
+windows when future observations are appended. Diagnostic tests cover successful
 runs and failures that preserve collected evidence or a review draft.
 
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
@@ -355,4 +409,5 @@ The eval runner also retains failed outputs.
 Real prices and macro data are connected; real news remains deferred.
 Endpoint comparisons can establish what changed, but cannot establish
 the cause of a market move. Model context does not include the full time series,
-so deeper statistical analysis needs a separate quantitative tool.
+while the separate quant workflow computes descriptive statistics from saved
+daily prices. The LLM report is not validated against those calculations.
