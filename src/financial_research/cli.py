@@ -83,6 +83,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     stage = "graph"
     started = time.perf_counter()
     try:
+        # Save the user's inputs before any graph node can fail. run_research()
+        # creates its own starting state; this copy is only for the recorder's initial snapshot.
         initial = ResearchState(question=question, price_request=price_request, max_tool_calls=args.max_tool_calls)
         recorder = RunRecorder(output, initial, mode=args.mode,
                                model=getattr(model, "model", "scripted"), review=args.review)
@@ -101,6 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         error = f"{type(exc).__name__}: {exc}"
         if recorder:
             try:
+                # The workflow wrapper already records failed graph nodes. The CLI
+                # records failures in its own file-writing stage, then marks the whole run failed.
                 if stage != "graph":
                     recorder.step(stage, state, time.perf_counter() - started, error)
                 recorder.finish(error)
