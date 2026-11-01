@@ -69,6 +69,14 @@ class NewsRequest(ReasonedRequest):
     query: Text
 
 
+class QuantRequest(ReasonedRequest):
+    evidence_ids: list[Text] = Field(
+        min_length=1, max_length=5,
+        description="Collected price evidence IDs containing full daily histories, e.g. E001 and E002.",
+    )
+    window: int = Field(default=20, ge=3, description="Number of matched returns per trailing correlation window.")
+
+
 class PriceAction(PriceRequest):
     tool: Literal["get_market_prices"] = "get_market_prices"
     start_date: date | None = None
@@ -91,19 +99,23 @@ class NewsAction(NewsRequest):
     tool: Literal["search_news"] = "search_news"
 
 
+class QuantAction(QuantRequest):
+    tool: Literal["analyze_prices"] = "analyze_prices"
+
+
 class FinishAction(ReasonedRequest):
     tool: Literal["finish_research"] = "finish_research"
 
 
 Action = Annotated[
-    PriceAction | MacroAction | NewsAction | FinishAction,
+    PriceAction | MacroAction | NewsAction | QuantAction | FinishAction,
     Field(discriminator="tool"),
 ]
 ACTION_ADAPTER = TypeAdapter(Action)
 
 
 class Observation(Model):
-    source_type: Literal["prices", "macro", "news"]
+    source_type: Literal["prices", "macro", "news", "quant"]
     source_name: Text
     source_uri: Text
     period_start: date

@@ -1,14 +1,16 @@
 """Fixture implementations and dispatch to the configured real-data tools."""
 
 import re
+from collections.abc import Sequence
 from datetime import date
 from typing import Literal
 
 from pydantic import JsonValue
 
-from financial_research import macro, prices
+from financial_research import macro, prices, quant
 from financial_research.models import (
     Action,
+    Evidence,
     HistoricalMacroRequest,
     HistoricalPriceRequest,
     MacroAction,
@@ -18,6 +20,7 @@ from financial_research.models import (
     Observation,
     PriceAction,
     PriceRequest,
+    QuantAction,
     ToolResult,
 )
 
@@ -126,8 +129,12 @@ def _execute_real_tool(action: Action, scope: HistoricalPriceRequest) -> ToolRes
             raise ValueError("finish_research is a routing action, not a data tool.")
 
 
-def execute_tool(action: Action, price_request: HistoricalPriceRequest | None = None) -> ToolResult:
+def execute_tool(
+    action: Action, price_request: HistoricalPriceRequest | None = None, *, evidence: Sequence[Evidence] = (),
+) -> ToolResult:
     """Select real or fixture execution, then dispatch the requested action."""
+    if isinstance(action, QuantAction):
+        return quant.analyze_price_evidence(action, evidence)
     if price_request is not None:
         return _execute_real_tool(action, price_request)
     match action:
