@@ -84,7 +84,7 @@ def build_graph(
     def execute(state: ResearchState) -> dict[str, Any]:
         if state.action is None or isinstance(state.action, FinishAction):
             raise ValueError("execute requires a data-tool action.")
-        result = execute_tool(state.action, state.price_request)
+        result = execute_tool(state.action, state.price_request, evidence=state.evidence)
         evidence = list(state.evidence)
         seen = {(item.source_uri, item.content) for item in evidence}
         for observation in result.observations:

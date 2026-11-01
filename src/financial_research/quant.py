@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from pydantic import Field, TypeAdapter
 
-from financial_research.models import Evidence, Model
+from financial_research.models import Evidence, Model, Observation, QuantRequest, ToolResult
 from financial_research.state import ResearchState
 
 
@@ -114,6 +114,40 @@ def analyze_prices(evidence: Sequence[Evidence], *, window: int = 20, periods_pe
     }
 
 
+def analyze_price_evidence(request: QuantRequest, evidence: Sequence[Evidence]) -> ToolResult:
+    """Compute from stored histories, then return citable evidence to the research loop."""
+    if len(set(request.evidence_ids)) != len(request.evidence_ids):
+        return ToolResult(error="Select each price evidence ID only once.")
+    by_id = {item.id: item for item in evidence}
+    unknown = set(request.evidence_ids) - by_id.keys()
+    if unknown:
+        return ToolResult(error=f"Unknown price evidence IDs: {', '.join(sorted(unknown))}. Fetch prices first.")
+    selected = [by_id[key] for key in request.evidence_ids]
+    if any(item.source_type != "prices" or "prices" not in item.data for item in selected):
+        return ToolResult(error="Analysis requires full daily price histories; endpoint summaries and macro/news evidence cannot be used.")
+    try:
+        analysis = analyze_prices(selected, window=request.window)
+    except (ValueError, OverflowError) as exc:
+        return ToolResult(error=f"Price analysis failed: {exc}")
+    analysis["input_evidence_ids"] = request.evidence_ids
+    for pair in analysis["pairs"]:
+        rolling = pair["rolling_correlations"]
+        pair["first_rolling_correlation"] = rolling[0] if rolling else None
+        pair["latest_rolling_correlation"] = rolling[-1] if rolling else None
+    return ToolResult(observations=[Observation(
+        source_type="quant", source_name="Python price analysis",
+        source_uri=(f"quant://prices/{analysis['input_sha256']}"
+                    f"?method_version={analysis['method_version']}&window={request.window}"
+                    f"&periods_per_year={analysis['periods_per_year']}"),
+        period_start=min(item.period_start for item in selected),
+        period_end=max(item.period_end for item in selected),
+        content=(f"Calculated close-price changes, annualized volatility, and return correlations "
+                 f"from {', '.join(request.evidence_ids)} using a {request.window}-return trailing window. "
+                 "See data for numerical results, actual coverage, and limitations; null means unavailable."),
+        data=analysis, is_fixture=any(item.is_fixture for item in selected),
+    )])
+
+
 def render_quant(analysis: dict[str, Any]) -> str:
     def number(value):
         return "unavailable" if value is None else f"{value:.4f}"
@@ -146,6 +180,8 @@ def save_quant(analysis: dict[str, Any], output: Path) -> None:
     (output / "quant.md").write_text(render_quant(analysis), encoding="utf-8")
 
 
+# Secondary utility: replay saved prices with different settings, without fetching
+# data or calling an LLM. Normal research selects this calculation through a tool.
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("state", type=Path, help="Saved state.json containing full daily price history")

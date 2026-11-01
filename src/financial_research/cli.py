@@ -13,7 +13,6 @@ from pydantic import ValidationError
 
 from financial_research.models import HistoricalPriceRequest
 from financial_research.diagnostics import RunRecorder
-from financial_research.quant import analyze_prices, save_quant
 from financial_research.reporting import render_report
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.workflow import run_research
@@ -95,11 +94,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             on_event=lambda message: print(message, flush=True),
             on_step=recorder.step,
         )
-        stage, started = "quant", time.perf_counter()
-        analysis = analyze_prices(state.evidence)
-        if analysis["assets"]:
-            save_quant(analysis, output)
-        recorder.step("quant", state, time.perf_counter() - started, None)
         stage, started = "artifacts", time.perf_counter()
         markdown = render_report(state)
         (output / "report.md").write_text(markdown, encoding="utf-8")
@@ -122,6 +116,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\nReport: {(output / 'report.md').resolve()}")
     print(f"State:  {(output / 'state.json').resolve()}")
     print(f"Run:    {(output / 'run.json').resolve()}")
-    if analysis["assets"]:
-        print(f"Quant:  {(output / 'quant.md').resolve()}")
     return 0

@@ -1,8 +1,9 @@
 # Agentic Financial Research
 
 A financial research prototype combining local LLM orchestration with reproducible
-price analysis. Python, LangGraph, and Pydantic handle tool selection, bounded
-execution, evidence, and reports. Yahoo Finance supplies prices; FRED supplies macro data.
+price analysis. The LLM selects tools, LangGraph controls execution and limits,
+and Pydantic defines and validates requests, state, and reports. Yahoo Finance
+supplies prices; FRED supplies macro data.
 
 **Local Ollama and real data are the defaults.** Provide a question, symbols, and
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
@@ -28,8 +29,10 @@ Each run prints its decisions and creates a fresh `runs/<run-id>/` directory:
   stop reason, and final report. Draft and critique fields are populated with `--review`.
 - `run.json`: run status, model, source-code hash, Git revision, dependency versions,
   stage timings, tool-failure counts, and any terminal error.
-- `quant.json` and `quant.md`: deterministic calculations when full daily prices
-  were collected. The endpoint-only synthetic demo does not create these files.
+
+When the model requests quantitative analysis, its results become evidence in
+`state.json` and can be cited in `report.md`. Research does not run calculations
+automatically or create a separate quant report.
 
 The CLI saves the initial state and updates it after each graph stage. A failed
 run retains its last state and records the failed stage in `run.json`. If review
@@ -82,7 +85,8 @@ The scripted demo returns an empty critique without an LLM call when review is e
 research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
 the next tool, its arguments, or an early stop. Fixture mode offers
 `get_market_prices`, `get_macro_series`, `search_news`, and `finish_research`.
-Real-data mode offers `get_market_prices`, `get_macro_series`, and `finish_research`.
+Real-data mode offers `get_market_prices`, `get_macro_series`, `analyze_prices`,
+and `finish_research`.
 It excludes fixture news and never falls back to synthetic observations.
 
 ## Read the code in this order
@@ -91,59 +95,62 @@ It excludes fixture news and never falls back to synthetic observations.
 2. [`workflow.py`](src/financial_research/workflow.py): four nodes, conditional routing,
    and the bounded `write_reviewed_report()` sequence inside the report node.
 3. [`models.py`](src/financial_research/models.py): typed actions, results, evidence, and report contracts.
-4. [`tools.py`](src/financial_research/tools.py): fixture data, calculated returns, and explicit unavailable-data results.
+4. [`tools.py`](src/financial_research/tools.py): dispatch to price, macro, and quant tools, plus fixture implementations.
 5. [`research_model.py`](src/financial_research/research_model.py): the model interface and scripted demo.
 6. [`diagnostics.py`](src/financial_research/diagnostics.py): state snapshots and run timings.
-7. [`quant.py`](src/financial_research/quant.py): price calculations, deterministic rendering, and offline replay.
+7. [`quant.py`](src/financial_research/quant.py): price calculations, citable analysis results, and offline replay.
 
 ## Reproducible quantitative analysis
 
-Collect two price histories and write both the LLM research report and Python
-quant report in the same run directory:
+Ask a question that needs statistics beyond the existing price-change summary:
 
 ```sh
 .venv/bin/python -m financial_research \
-  "Compare AAPL and MSFT closing-price changes during 2024 using price data only." \
-  --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-12-31 \
-  --max-tool-calls 1
+  "Compare AAPL and MSFT return volatility and rolling return correlations during 2024." \
+  --symbols AAPL MSFT --start-date 2024-01-01 --end-date 2024-12-31
 ```
 
-The quant step runs after research and uses the full saved price arrays. Its
-results are in `quant.md`; it does not change the LLM-written `report.md` or supply
-new evidence to the model. One collected symbol gives per-asset statistics;
-correlations require at least two collected price histories.
+The model can fetch prices, then call `analyze_prices` with their collected
+evidence IDs (for example `E001` and `E002`) and a trailing window, defaulting to
+20 matched returns. Python reads the full stored histories and returns a new
+evidence item containing computed statistics, source IDs, settings, an input hash,
+and limitations. The next decision and report writer receive those statistics.
+The call uses the existing `execute` node and consumes one tool call from the
+same budget as price and macro requests. No extra graph node is needed.
 
-Replay a saved run without Ollama or network access:
+One selected history gives per-asset statistics; correlations require at least
+two. Invalid IDs or unusable histories return a tool error without evidence.
+Analysis runs only when selected: a simple price-change question may need only
+the existing price summary. Model selection is guided by instructions and can
+still miss a needed calculation.
+
+Full calculated returns and rolling correlations stay in `state.json`. Model
+context keeps per-asset statistics, full-sample correlations, and the first/latest
+rolling windows, while omitting the long arrays.
+
+The standalone CLI is a secondary utility for replaying saved prices with
+different settings, without Ollama or network access:
 
 ```sh
 .venv/bin/python -m financial_research.quant runs/<run-id>/state.json
 ```
 
-Each replay creates a fresh directory under `runs/quant/`. Identical saved
-evidence and parameters produce identical `quant.json` contents. The file records
+Each replay writes `quant.json` and `quant.md` in a fresh directory under
+`runs/quant/`. Identical saved evidence and parameters produce identical
+`quant.json` contents. The file records
 an input hash, method version, settings, source IDs, per-interval returns, and
 every trailing correlation window. `--window` defaults to 20 matched returns;
-`--periods-per-year` defaults to 252 and controls volatility annualization.
+`--periods-per-year` defaults to 252 and controls volatility annualization. The
+agent tool uses 252; its annualization assumption is included in the evidence.
 
-The calculation uses:
+Calculates close-price returns, annualized volatility (252 trading sessions by
+default), and full-period and rolling return correlations. Correlations use
+matching return intervals; missing prices are not filled.
 
-- Simple close-price return: `close[t] / close[t-1] - 1`.
-- Annualized volatility: sample standard deviation of observed returns times
-  `sqrt(periods_per_year)`, displayed as a percentage.
-- Pearson correlation of returns whose **start and end dates both match**.
-  Pairing requires equal, known exchange time zones. Trailing windows use only
-  observations through their end date; missing prices are never filled.
-
-Insufficient observations and constant returns produce explicit unavailable
-statistics. Gaps can create multi-session returns, making volatility annualization
-approximate. Provider Close excludes additional dividend adjustment, so these
-are not total returns. Correlation is descriptive, not causal. This is historical
-price analysis, not a trading-strategy backtest; source revisions prevent treating
-the downloaded history as a point-in-time dataset.
-
-The calculations use Python's documented [sample standard deviation and Pearson
-correlation](https://docs.python.org/3.11/library/statistics.html). No new runtime
-dependencies are required.
+Returns exclude dividends. Missing sessions make volatility annualization
+approximate. Undefined or insufficient-data results are reported as `null`.
+Correlation does not establish causation; this is historical analysis, not a
+strategy backtest.
 
 ## Use local Qwen with Ollama
 
@@ -199,8 +206,9 @@ Python enforces the configured symbol set and date range before calling the real
 tool. It records failures without falling back to fixtures. Reports identify
 the configured real-data tools and the evidence actually retrieved.
 
-Both real-data tools are available to the model; macro calls reuse the configured
-date range. Use `--mode demo` for synthetic fixtures.
+Price and macro tools are available to the model; macro calls reuse the configured
+date range. The quant tool analyzes already collected prices. Use `--mode demo`
+for synthetic fixtures.
 
 The configured scope is stored in `state.json` as `price_request`, alongside full
 selected daily series. Model requests contain price summaries and provenance;
@@ -356,8 +364,9 @@ No model server or API keys are needed. Requiring these checks before merging is
 a repository setting. Live quality evals remain a separate local command.
 
 Quant tests cover known numerical results, missing-date alignment, insufficient
-and constant returns, reproducible replay, and unchanged historical rolling
-windows when future observations are appended. Diagnostic tests cover successful
+and constant returns, reproducible replay, unchanged historical rolling windows
+when future observations are appended, and model-selected calculations becoming
+citable evidence before reporting. Diagnostic tests cover successful
 runs and failures that preserve collected evidence or a review draft.
 
 Tests cover routing, failed tools, budget enforcement, evidence deduplication,
@@ -408,6 +417,6 @@ failure snapshots; checkpoint/resume and a hosted tracing backend are not implem
 The eval runner also retains failed outputs.
 Real prices and macro data are connected; real news remains deferred.
 Endpoint comparisons can establish what changed, but cannot establish
-the cause of a market move. Model context does not include the full time series,
-while the separate quant workflow computes descriptive statistics from saved
-daily prices. The LLM report is not validated against those calculations.
+the cause of a market move. Model context does not include the full time series;
+the quant tool computes descriptive statistics from stored daily prices and
+supplies summaries as evidence.

@@ -195,13 +195,11 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
     assert len(saved.evidence[0].data["prices"]) == 2
     assert "REAL DATA MODE: Yahoo Finance" in report and "FRED" in report and "SYNTHETIC FIXTURE" not in report
     assert "2025-01-06 to 2025-01-07" in requests[0]["messages"][0]["content"]
-    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "finish_research"}
+    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "analyze_prices", "finish_research"}
     assert len(saved.evidence) == 2 and all(not item.is_fixture for item in saved.evidence)
-    quant = json.loads(next(tmp_path.glob("*/quant.json")).read_text())
-    assert quant["assets"][0]["symbol"] == "IBM"
-    assert quant["assets"][0]["evidence_id"] == saved.evidence[0].id
-    assert quant["assets"][0]["return_count"] == 1
-    assert quant["assets"][0]["annualized_volatility_pct"] is None
+    assert not list(tmp_path.glob("*/quant.*"))
+    diagnostics = json.loads(next(tmp_path.glob("*/run.json")).read_text())
+    assert all(step["stage"] != "quant" for step in diagnostics["steps"])
     assert saved.evidence[1].data["change"] == -0.2
     assert len(saved.evidence[1].data["values"]) == 2
     assert macro_calls[1]["observation_start"] == ["2025-01-06"]
@@ -225,3 +223,63 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
         assert saved.critique.issues == []
     else:
         assert saved.draft_report is None and saved.critique is None
+
+
+@pytest.mark.parametrize("review", [False, True])
+def test_model_selected_quant_tool_supplies_citable_statistics_before_reporting(monkeypatch, tmp_path, review):
+    messages = [
+        _text({"objectives": ["Calculate return volatility and correlation."], "assumptions": []}),
+        _call("get_market_prices", symbols=["AAPL", "MSFT"], start_date="2025-01-06", end_date="2025-01-09",
+              rationale="Fetch daily histories for the comparison."),
+        _call("analyze_prices", evidence_ids=["E001", "E002"], window=3,
+              rationale="Calculate statistics from the collected prices."),
+        _call("finish_research", rationale="Computed statistics answer the question."),
+        _text({
+            "title": "Price-return comparison",
+            "claims": [{"statement": "The observed returns have correlation 1.",
+                        "kind": "observation", "evidence_ids": ["E003"]}],
+            "limitations": ["Three observed returns do not establish causation or predict future returns."],
+        }),
+    ]
+    if review:
+        messages.append(_text({"issues": []}))
+    requests = _server(monkeypatch, messages)
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def history(self, **kwargs):
+            values = [100, 110, 99, 99] if self.symbol == "AAPL" else [100, 120, 96, 96]
+            return pd.DataFrame({"Close": values}, index=pd.date_range("2025-01-06", periods=4))
+
+        def get_history_metadata(self):
+            return {"currency": "USD", "exchangeTimezoneName": "America/New_York"}
+
+    monkeypatch.setattr(prices.yf, "Ticker", Ticker)
+    assert main([
+        "Compare AAPL and MSFT return volatility and correlation.", "--symbols", "AAPL", "MSFT",
+        "--start-date", "2025-01-06", "--end-date", "2025-01-09", "--output", str(tmp_path),
+        *(["--review"] if review else []),
+    ]) == 0
+    state = ResearchState.model_validate_json(next(tmp_path.glob("*/state.json")).read_text())
+    assert [call.action.tool for call in state.tool_calls] == ["get_market_prices", "analyze_prices"]
+    assert state.evidence[-1].id == "E003" and state.evidence[-1].source_type == "quant"
+    assert state.evidence[-1].is_fixture is False
+    assert state.evidence[-1].data["pairs"][0]["correlation"] == pytest.approx(1)
+    assert len(state.evidence[-1].data["assets"][0]["returns"]) == 3
+    assert len(state.evidence[-1].data["pairs"][0]["rolling_correlations"]) == 1
+    assert state.report.claims[0].evidence_ids == ["E003"]
+    assert "[E003]" in next(tmp_path.glob("*/report.md")).read_text()
+    for request in requests[3:]:  # Next decision, writer, and optional reviewer all see computed summaries.
+        context = json.loads(request["messages"][1]["content"])
+        summaries = [context["evidence"][-1], context["tool_calls"][-1]["result"]["observations"][0]]
+        for item in summaries:
+            assert item["data"]["input_evidence_ids"] == ["E001", "E002"]
+            assert item["data"]["assets"][0]["annualized_volatility_pct"] > 0
+            assert "returns" not in item["data"]["assets"][0]
+            assert "rolling_correlations" not in item["data"]["pairs"][0]
+            assert item["data"]["pairs"][0]["latest_rolling_correlation"]["correlation"] == pytest.approx(1)
+    diagnostics = json.loads(next(tmp_path.glob("*/run.json")).read_text())
+    assert diagnostics["tool_calls"] == 2
+    assert sum(step["stage"] == "execute" for step in diagnostics["steps"]) == 2

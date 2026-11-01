@@ -4,9 +4,10 @@ from datetime import date, timedelta
 
 import pytest
 
-from financial_research.models import Evidence
+from financial_research.models import ACTION_ADAPTER, Evidence, QuantAction
 from financial_research.quant import analyze_prices, main, render_quant
 from financial_research.state import ResearchState
+from financial_research.tools import execute_tool
 
 
 def history(symbol="A", prices=(100, 110, 99, 99), days=None, **metadata):
@@ -118,3 +119,45 @@ def test_endpoint_only_state_fails_without_fake_quant_results(tmp_path, capsys):
     assert main([str(path), "--output", str(output)]) == 1
     assert not output.exists()
     assert "No full price histories" in capsys.readouterr().err
+
+
+def test_quant_action_uses_only_selected_saved_evidence_and_retains_provenance():
+    sources = [history(), history("B", (100, 120, 96, 96)), history("UNSELECTED")]
+    original = [item.model_dump_json() for item in sources]
+    action = ACTION_ADAPTER.validate_python({
+        "tool": "analyze_prices", "evidence_ids": ["E-A", "E-B"], "window": 3,
+        "rationale": "Compare return volatility and correlation.",
+    })
+    result = execute_tool(action, evidence=sources)
+    assert result.error is None
+    observation = result.observations[0]
+    assert observation.source_type == "quant" and observation.is_fixture is True
+    assert observation.data["input_evidence_ids"] == ["E-A", "E-B"]
+    assert [asset["symbol"] for asset in observation.data["assets"]] == ["A", "B"]
+    assert observation.data["assets"][0]["annualized_volatility_pct"] == pytest.approx(10 * math.sqrt(252))
+    assert observation.data["pairs"][0]["correlation"] == pytest.approx(1)
+    assert observation.data["pairs"][0]["latest_rolling_correlation"]["correlation"] == pytest.approx(1)
+    assert observation.data["input_sha256"] in observation.source_uri
+    assert "window=3" in observation.source_uri
+    assert [item.model_dump_json() for item in sources] == original
+
+
+@pytest.mark.parametrize("ids, changes, expected", [
+    (["E999"], {}, "Unknown price evidence"),
+    (["E-A", "E-A"], {}, "only once"),
+    (["E-A"], {"source_type": "macro"}, "full daily price histories"),
+    (["E-A"], {"data": {"symbol": "A", "start_price": 100, "end_price": 110}}, "full daily price histories"),
+    (["E-A"], {"data": {"symbol": "A", "price_type": "close", "auto_adjust": False,
+                          "prices": [{"date": "2025-01-01", "close": 0}]}}, "Price analysis failed"),
+])
+def test_quant_tool_failures_do_not_create_evidence(ids, changes, expected):
+    action = QuantAction(evidence_ids=ids, rationale="Check available histories.")
+    result = execute_tool(action, evidence=[history().model_copy(update=changes)])
+    assert expected in result.error
+    assert result.observations == []
+
+
+@pytest.mark.parametrize("arguments", [{"evidence_ids": []}, {"evidence_ids": ["E001"], "window": 2}])
+def test_quant_action_rejects_invalid_arguments(arguments):
+    with pytest.raises(ValueError):
+        ACTION_ADAPTER.validate_python({"tool": "analyze_prices", "rationale": "Analyze prices.", **arguments})

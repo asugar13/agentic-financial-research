@@ -13,6 +13,7 @@ from financial_research.models import (
     NewsRequest,
     PriceAction,
     PriceRequest,
+    QuantRequest,
     ReasonedRequest,
     ReportCritique,
     ResearchPlan,
@@ -80,6 +81,11 @@ def instructions(state: ResearchState) -> str:
         "A change in a series measured in Percent is measured in percentage points, not percent return. "
         "FRED values may include later revisions and are not an as-of backtest dataset. "
         "News research is not connected. Comparing price and macro changes cannot establish causation. "
+        "When the question requires volatility or statistical correlation, fetch daily prices first, then call "
+        "analyze_prices with the collected price evidence IDs. Python uses the full stored histories; "
+        "the model context contains summaries only. For a simple price-change question the price summary may suffice. "
+        "Cite the resulting quant evidence for calculated statistics and respect its coverage and limitations. "
+        "First and latest rolling correlations compare two windows, not a continuous trend. "
         "Do not invent news or causal explanations, and do not describe real observations as synthetic."
     )
 
@@ -90,6 +96,7 @@ def tool_definitions(state: ResearchState) -> list[tuple[str, type[ReasonedReque
     return [
         ("get_market_prices", HistoricalPriceRequest, "Get real Yahoo daily closes; symbols and dates must match the configured research scope."),
         ("get_macro_series", MacroRequest, "Get a real historical FRED series (e.g. DFII10) for the configured date range; requires FRED_API_KEY."),
+        ("analyze_prices", QuantRequest, "Calculate volatility and full/trailing return correlations from already collected price evidence IDs. Uses a 252-session year for volatility; no downloads. Call only when needed to answer the question."),
         TOOL_DEFINITIONS[-1],  # finish_research is a routing action, not a data source.
     ]
 
