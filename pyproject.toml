@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 llm = ["openai>=2,<3"]
 dev = ["pytest>=8,<10"]
+ui = ["streamlit>=1.66,<2"]
 
 [project.scripts]
 financial-research = "financial_research.cli:main"

@@ -23,9 +23,9 @@ jobs:
           cache-dependency-path: requirements.lock
       - name: Install compatible dependencies on Python 3.11
         if: matrix.python == '3.11'
-        run: python -m pip install -e '.[dev,llm]'
+        run: python -m pip install -e '.[dev,llm,ui]'
       - name: Install locked dependencies on Python 3.14
         if: matrix.python == '3.14'
-        run: python -m pip install -c requirements.lock -e '.[dev,llm]'
+        run: python -m pip install -c requirements.lock -e '.[dev,llm,ui]'
       - run: python -m pytest
       - run: python -m financial_research --mode demo --output runs/ci
