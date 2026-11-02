@@ -9,6 +9,36 @@ supplies prices; FRED supplies macro data.
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
 `--mode demo` for the offline synthetic example. Real news integration is still pending.
 
+## Open the Streamlit UI
+
+From the repository root:
+
+```sh
+.venv/bin/python -m pip install -c requirements.lock -e '.[ui]'
+.venv/bin/streamlit run src/financial_research/streamlit_app.py --server.address 127.0.0.1
+```
+
+On Python 3.11, omit `-c requirements.lock`. Open <http://localhost:8501>.
+Choose **Offline demo** for a first run without
+credentials or a model. **Local Ollama** is the default for real questions; start
+Ollama and install the model shown under **Research settings**. FRED requests use
+`FRED_API_KEY` from the server's environment, as in the CLI.
+
+Enter a question, symbols, and dates, then press **Run research**. Follow the
+progress, read the findings and sources, and inspect the price charts. The
+**Analysis** tab shows calculations only when the agent called `analyze_prices`.
+Review is off by default. Reports, state, and run diagnostics can be downloaded.
+[View the interface with a saved live run](docs/streamlit-ui.png).
+
+The UI and CLI use the same graph and artifact-saving function in
+[`runner.py`](src/financial_research/runner.py). Each submission gets a new folder
+under `runs/`. Changing a chart selection or downloading a file does not rerun
+research. The latest result stays in the browser session; refreshing the page
+clears that view, but the saved files remain on disk. Failed runs retain the same
+diagnostics and partial evidence as the CLI.
+
+This is the local interface. Hosted inference and AWS deployment come next.
+
 ## Run the offline demonstration
 
 The project environment has already been installed in `.venv` in this workspace:
@@ -348,13 +378,14 @@ require Python 3.12+; on 3.11, omit `-c requirements.lock` to resolve compatible
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm]'
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,ui]'
 .venv/bin/python -m pytest
 ```
 
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
-is a development dependency; the OpenAI SDK is an optional provider dependency.
+is a development dependency; the OpenAI SDK and Streamlit are optional dependencies.
+UI tests are skipped when Streamlit is not installed; CI installs and runs them.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
 
 [GitHub Actions](.github/workflows/tests.yml) runs the deterministic tests and an
