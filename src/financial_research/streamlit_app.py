@@ -121,7 +121,13 @@ def show_result(run: dict) -> None:
     st.divider()
     for column, filename in zip(st.columns(3), ("report.md", "state.json", "run.json")):
         artifact = output / filename
-        if artifact.exists() and (filename != "report.md" or complete):
+        # A failed run may leave a partial report file. Offer reports only after
+        # success, while keeping state and diagnostics available to inspect failures.
+        if filename == "report.md":
+            show_download = artifact.exists() and complete
+        else:
+            show_download = artifact.exists()
+        if show_download:
             column.download_button(f"Download {filename}", artifact.read_bytes(),
                                    file_name=f"{output.name}-{filename}",
                                    mime="application/json" if filename.endswith("json") else "text/markdown",

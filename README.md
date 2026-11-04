@@ -18,7 +18,8 @@ From the repository root:
 .venv/bin/streamlit run src/financial_research/streamlit_app.py --server.address 127.0.0.1
 ```
 
-On Python 3.11, omit `-c requirements.lock`. Open <http://localhost:8501>.
+On Python 3.11, omit `-c requirements.lock` (the lock currently pins NumPy 2.5.4, which
+requires Python 3.12+). Open <http://localhost:8501>.
 Choose **Offline demo** for a first run without
 credentials or a model. **Local Ollama** is the default for real questions; start
 Ollama and install the model shown under **Research settings**. FRED requests use
@@ -30,8 +31,9 @@ progress, read the findings and sources, and inspect the price charts. The
 Review is off by default. Reports, state, and run diagnostics can be downloaded.
 [View the interface with a saved live run](docs/streamlit-ui.png).
 
-The UI and CLI use the same graph and artifact-saving function in
-[`runner.py`](src/financial_research/runner.py). Each submission gets a new folder
+The UI and CLI call
+[run_saved_research()](https://github.com/asugar13/agentic-financial-research/blob/b9173d969fd2ddcca11047d27b578b99cb34ac88/src/financial_research/runner.py#L15)
+in `runner.py` to execute the graph and save its artifacts. Each submission gets a new folder
 under `runs/`. Changing a chart selection or downloading a file does not rerun
 research. The latest result stays in the browser session; refreshing the page
 clears that view, but the saved files remain on disk. Failed runs retain the same
@@ -385,7 +387,8 @@ python3 -m venv .venv
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
 is a development dependency; the OpenAI SDK and Streamlit are optional dependencies.
-UI tests are skipped when Streamlit is not installed; CI installs and runs them.
+UI tests use [pytest.importorskip](https://github.com/asugar13/agentic-financial-research/blob/4038116bae0692e626c66c6485526a93ae138a2f/tests/test_streamlit_app.py#L15)
+to skip the test module when Streamlit is not installed; CI installs and runs them.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
 
 [GitHub Actions](.github/workflows/tests.yml) runs the deterministic tests and an
