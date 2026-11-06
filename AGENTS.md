@@ -1,3 +1,7 @@
+# Repository workflow
+
+- Agents may open and update PRs but must never merge them. The user is the navigator and handles merging.
+
 <!-- BEGIN AWS Agent Toolkit rules -->
 
 ## AWS configuration for this repository
