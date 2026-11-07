@@ -24,6 +24,9 @@ def _schema_for_bedrock(value: Any) -> Any:
         return [_schema_for_bedrock(item) for item in value]
     if not isinstance(value, dict):
         return value
+    # Bedrock supports only a subset of JSON Schema. Simplify the outgoing
+    # schema without changing the Pydantic model; _structured() validates the
+    # returned JSON against that original model and all its constraints.
     unsupported = {"minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum",
                    "exclusiveMaximum", "multipleOf", "minItems", "maxItems", "default"}
     result = {}
@@ -60,6 +63,9 @@ class BedrockModel:
                 modelId=self.model,
                 system=[{"text": f"{instructions(state)}\nTask: {task}\n/no_think"}],
                 messages=[{"role": "user", "content": [{"text": state.model_context()}]}],
+                # Cap generated output per request, separately from the input context.
+                # Start with 4,096 tokens for the short JSON plans/reports we request.
+                # A max_tokens stop is rejected below because the JSON may be incomplete.
                 inferenceConfig={"maxTokens": 4096, "temperature": 0},
                 **options,
             )
