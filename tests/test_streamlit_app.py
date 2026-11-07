@@ -174,3 +174,49 @@ def test_interrupted_run_is_not_displayed_as_a_success(app, monkeypatch):
     assert "interrupted" in app.error[0].value
     assert app.status[0].state == "error"
     assert len(app.get("download_button")) == 2
+
+
+def test_bedrock_selection_uses_the_same_runner_and_displays_usage(app, monkeypatch, tmp_path):
+    pytest.importorskip("boto3")
+    from financial_research import bedrock_model
+
+    selected = []
+
+    class HostedModel:
+        region = "eu-north-1"
+
+        def __init__(self, model):
+            self.model = model
+            self.usage = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "responses_without_usage": 0}
+            selected.append(model)
+
+        def count(self):
+            self.usage["requests"] += 1
+            self.usage["input_tokens"] += 10
+            self.usage["output_tokens"] += 2
+
+        def make_plan(self, state):
+            self.count()
+            return ResearchPlan(objectives=["Inspect availability."], assumptions=[])
+
+        def choose_action(self, state):
+            self.count()
+            return FinishAction(rationale="No evidence available in this UI test.")
+
+        def write_report(self, state):
+            self.count()
+            return ResearchReport(title="No findings", claims=[], limitations=["No evidence collected."])
+
+    monkeypatch.setattr(bedrock_model, "BedrockModel", HostedModel)
+    monkeypatch.setenv("BEDROCK_MODEL", "configured-bedrock-model")
+    app.radio(key="mode").set_value("Amazon Bedrock").run()
+    assert next(item for item in app.text_input if item.label == "Bedrock model ID").value == "configured-bedrock-model"
+    submit(app)
+    assert not app.error and selected == ["configured-bedrock-model"]
+    assert any("30 input tokens" in item.value for item in app.caption)
+    diagnostics = json.loads(next(tmp_path.glob("runs/*/run.json")).read_text())
+    assert diagnostics["mode"] == "bedrock" and diagnostics["model_region"] == "eu-north-1"
+    assert diagnostics["model_usage"]["requests"] == 3
+    app.run()
+    assert selected == ["configured-bedrock-model"]
+    assert len(app.get("download_button")) == 3
