@@ -39,7 +39,7 @@ class RunRecorder:
         for path in sorted(Path(__file__).parent.glob("*.py")):
             source.update(path.name.encode() + b"\0" + path.read_bytes())
         dependencies = {}
-        for name in ("langgraph", "pydantic", "yfinance", "openai"):
+        for name in ("langgraph", "pydantic", "yfinance", "openai", "boto3", "botocore"):
             try:
                 dependencies[name] = version(name)
             except PackageNotFoundError:
