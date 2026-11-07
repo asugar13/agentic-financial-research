@@ -99,6 +99,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\nReport: {(output / 'report.md').resolve()}")
     print(f"State:  {(output / 'state.json').resolve()}")
     print(f"Run:    {(output / 'run.json').resolve()}")
-    if usage := getattr(model, "usage", None):
-        print(f"Model tokens: {usage['input_tokens']} input / {usage['output_tokens']} output")
+    if model_usage := getattr(model, "model_usage", None):
+        print(f"Model tokens: {model_usage['input_tokens']} input / {model_usage['output_tokens']} output")
     return 0

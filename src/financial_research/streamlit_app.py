@@ -88,9 +88,9 @@ def show_result(run: dict) -> None:
     columns[0].metric("Evidence collected", len(state.evidence))
     columns[1].metric("Tool calls", f"{len(state.tool_calls)} / {state.max_tool_calls}")
     columns[2].metric("Elapsed", f"{diagnostics.get('seconds', 0):.1f}s")
-    if usage := diagnostics.get("model_usage"):
-        st.caption(f"Model usage: {usage['input_tokens']:,} input tokens · {usage['output_tokens']:,} output tokens")
-        if usage["responses_without_usage"]:
+    if model_usage := diagnostics.get("model_usage"):
+        st.caption(f"Model usage: {model_usage['input_tokens']:,} input tokens · {model_usage['output_tokens']:,} output tokens")
+        if model_usage["responses_without_usage"]:
             st.warning("Some model responses omitted token usage. These totals are incomplete.")
     if diagnostics.get("tool_failures"):
         st.warning("Some data requests failed. Check the progress log and report limitations for missing coverage.")

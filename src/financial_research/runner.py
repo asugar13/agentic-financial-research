@@ -31,14 +31,14 @@ def run_saved_research(
         # own initial state; this copy is only the recorder's starting snapshot.
         initial = ResearchState(question=question, price_request=price_request, max_tool_calls=max_tool_calls)
         recorder = RunRecorder(output, initial, mode=mode, model=getattr(model, "model", "scripted"), review=review)
-        usage_before = dict(getattr(model, "usage", {}))
+        model_usage_before = dict(getattr(model, "model_usage", {}))
 
         def record_step(name: str, state: ResearchState, seconds: float, error: str | None) -> None:
             # Usage belongs in diagnostics, not the evidence sent to the model.
             # Subtract the starting counters if the caller reuses a model instance.
-            if usage_before:
+            if model_usage_before:
                 recorder.data["model_usage"] = {
-                    key: value - usage_before[key] for key, value in getattr(model, "usage").items()
+                    key: value - model_usage_before[key] for key, value in getattr(model, "model_usage").items()
                 }
                 recorder.data["model_region"] = getattr(model, "region", None)
             recorder.step(name, state, seconds, error)

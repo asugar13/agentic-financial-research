@@ -46,10 +46,10 @@ class BedrockModel:
         self.model = model or os.environ.get("BEDROCK_MODEL") or DEFAULT_MODEL
         self.region = region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or DEFAULT_REGION
         self.client = client
-        self.usage = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "responses_without_usage": 0}
+        self.model_usage = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "responses_without_usage": 0}
 
     def _request(self, state: ResearchState, task: str, **options: Any) -> dict:
-        self.usage["requests"] += 1
+        self.model_usage["requests"] += 1
         try:
             # Delay client creation until the graph starts, so credential failures
             # retain the same initial state and diagnostics as other run failures.
@@ -78,12 +78,12 @@ class BedrockModel:
             raise ModelError(
                 f"Bedrock connection failed ({type(exc).__name__}); check AWS_PROFILE and renew aws login if expired."
             ) from exc
-        usage = response.get("usage", {})
-        if "inputTokens" in usage and "outputTokens" in usage:
-            self.usage["input_tokens"] += usage["inputTokens"]
-            self.usage["output_tokens"] += usage["outputTokens"]
+        model_usage = response.get("usage", {})
+        if "inputTokens" in model_usage and "outputTokens" in model_usage:
+            self.model_usage["input_tokens"] += model_usage["inputTokens"]
+            self.model_usage["output_tokens"] += model_usage["outputTokens"]
         else:
-            self.usage["responses_without_usage"] += 1
+            self.model_usage["responses_without_usage"] += 1
         if response.get("stopReason") not in {"end_turn", "tool_use"}:
             raise ModelError(f"Bedrock response did not complete normally: {response.get('stopReason')}.")
         return response

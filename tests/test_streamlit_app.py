@@ -187,13 +187,13 @@ def test_bedrock_selection_uses_the_same_runner_and_displays_usage(app, monkeypa
 
         def __init__(self, model):
             self.model = model
-            self.usage = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "responses_without_usage": 0}
+            self.model_usage = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "responses_without_usage": 0}
             selected.append(model)
 
         def count(self):
-            self.usage["requests"] += 1
-            self.usage["input_tokens"] += 10
-            self.usage["output_tokens"] += 2
+            self.model_usage["requests"] += 1
+            self.model_usage["input_tokens"] += 10
+            self.model_usage["output_tokens"] += 2
 
         def make_plan(self, state):
             self.count()

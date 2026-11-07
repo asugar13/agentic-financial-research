@@ -127,7 +127,7 @@ def test_incomplete_or_filtered_outputs_fail_and_retain_usage(stop):
     model, _, _ = model_with_outputs([text_response({}, stop)])
     with pytest.raises(ModelError, match="did not complete normally"):
         model.make_plan(ResearchState(question="Inspect prices."))
-    assert model.usage["output_tokens"] == 20
+    assert model.model_usage["output_tokens"] == 20
 
 
 def test_aws_failures_preserve_diagnostics_and_do_not_expose_provider_message(tmp_path):
