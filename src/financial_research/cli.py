@@ -28,9 +28,9 @@ def _budget(value: str) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run bounded financial research with fixture or real price and macro data.")
     parser.add_argument("question", nargs="?")
-    parser.add_argument("--mode", choices=["demo", "ollama", "llm"], default="ollama",
+    parser.add_argument("--mode", choices=["demo", "ollama", "bedrock", "llm"], default="ollama",
                         help="Model provider (default: ollama); demo runs scripted synthetic fixtures offline")
-    parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL (default qwen2.5:7b) or OPENAI_MODEL")
+    parser.add_argument("--model", help="Model ID; otherwise OLLAMA_MODEL, BEDROCK_MODEL, or OPENAI_MODEL")
     parser.add_argument("--max-tool-calls", type=_budget, default=4)
     parser.add_argument("--review", action="store_true", help="Critique the draft and revise at most once (disabled by default)")
     parser.add_argument("--symbols", nargs="+", help="Allowed provider symbols for real-price research")
@@ -64,6 +64,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         model = OllamaModel(args.model or os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b")
         print(f"Local Ollama model: {model.model}", flush=True)
+    elif args.mode == "bedrock":
+        try:
+            from financial_research.bedrock_model import BedrockModel
+        except ImportError:
+            parser.error("install the AWS provider with: python -m pip install -e '.[bedrock]'")
+        model = BedrockModel(args.model)
+        print(f"Amazon Bedrock model: {model.model} | Region: {model.region}", flush=True)
     elif args.mode == "llm":
         model_name = args.model or os.environ.get("OPENAI_MODEL")
         if not os.environ.get("OPENAI_API_KEY") or not model_name:
@@ -92,4 +99,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"\nReport: {(output / 'report.md').resolve()}")
     print(f"State:  {(output / 'state.json').resolve()}")
     print(f"Run:    {(output / 'run.json').resolve()}")
+    if model_usage := getattr(model, "model_usage", None):
+        print(f"Model tokens: {model_usage['input_tokens']} input / {model_usage['output_tokens']} output")
     return 0

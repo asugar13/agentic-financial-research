@@ -88,6 +88,10 @@ def show_result(run: dict) -> None:
     columns[0].metric("Evidence collected", len(state.evidence))
     columns[1].metric("Tool calls", f"{len(state.tool_calls)} / {state.max_tool_calls}")
     columns[2].metric("Elapsed", f"{diagnostics.get('seconds', 0):.1f}s")
+    if model_usage := diagnostics.get("model_usage"):
+        st.caption(f"Model usage: {model_usage['input_tokens']:,} input tokens · {model_usage['output_tokens']:,} output tokens")
+        if model_usage["responses_without_usage"]:
+            st.warning("Some model responses omitted token usage. These totals are incomplete.")
     if diagnostics.get("tool_failures"):
         st.warning("Some data requests failed. Check the progress log and report limitations for missing coverage.")
 
@@ -151,8 +155,9 @@ def main() -> None:
 
     with st.sidebar:
         st.header("New research")
-        mode = st.radio("Data and model", ["Local Ollama", "Offline demo"], key="mode")
+        mode = st.radio("Data and model", ["Local Ollama", "Amazon Bedrock", "Offline demo"], key="mode")
         demo = mode == "Offline demo"
+        bedrock = mode == "Amazon Bedrock"
         year = date.today().year - 1
         with st.form("research", enter_to_submit=False):
             if demo:
@@ -165,21 +170,27 @@ def main() -> None:
                 start = st.date_input("Start date", date(year, 1, 1), key="start_date")
                 end = st.date_input("End date", date(year, 12, 31), key="end_date")
             with st.expander("Research settings"):
-                model_name = st.text_input("Ollama model", os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b", disabled=demo)
+                if bedrock:
+                    model_name = st.text_input("Bedrock model ID", os.environ.get("BEDROCK_MODEL") or "qwen.qwen3-32b-v1:0")
+                    st.caption(f"Region: {os.environ.get('AWS_REGION') or os.environ.get('AWS_DEFAULT_REGION') or 'eu-north-1'}. "
+                               "Model requests consume AWS credits or incur usage charges.")
+                else:
+                    model_name = st.text_input("Ollama model", os.environ.get("OLLAMA_MODEL") or "qwen2.5:7b", disabled=demo)
                 budget = st.number_input("Maximum tool calls", min_value=0, max_value=10, value=4,
                                          help="Includes failed data requests. Does not limit model requests or tokens.")
                 review = st.checkbox("Review the draft", value=False,
                                      help="Adds a critique and at most one revision. This takes extra model requests.")
             submitted = st.form_submit_button("Run research", type="primary", width="stretch")
         if not demo:
-            st.caption("Ollama must be running locally. Yahoo supplies prices; FRED macro requests need FRED_API_KEY. "
+            st.caption(("Bedrock uses the server's AWS credentials. " if bedrock else "Ollama must be running locally. ") +
+                       "Yahoo supplies prices; FRED macro requests need FRED_API_KEY. "
                        "Live news is not connected.")
 
     if submitted:
         try:
             if not demo:
                 if not question.strip() or not model_name.strip():
-                    raise ValueError("Enter a research question and an Ollama model name.")
+                    raise ValueError("Enter a research question and a model name.")
                 price_request = HistoricalPriceRequest(
                     symbols=symbols.replace(",", " ").split(), start_date=start, end_date=end,
                     rationale="The user selected these symbols and dates as the research scope.",
@@ -197,9 +208,19 @@ def main() -> None:
                     st.write(message)
 
                 try:
+                    if demo:
+                        model, provider = DemoModel(), "demo"
+                    elif bedrock:
+                        try:
+                            from financial_research.bedrock_model import BedrockModel
+                        except ImportError as exc:
+                            raise RuntimeError("Install Bedrock support with: python -m pip install -e '.[bedrock]'") from exc
+                        model, provider = BedrockModel(model_name.strip()), "bedrock"
+                    else:
+                        model, provider = OllamaModel(model_name.strip()), "ollama"
                     run_saved_research(
-                        question.strip(), DemoModel() if demo else OllamaModel(model_name.strip()),
-                        output=run["output"], mode="demo" if demo else "ollama", price_request=price_request,
+                        question.strip(), model,
+                        output=run["output"], mode=provider, price_request=price_request,
                         max_tool_calls=budget, review=review, on_event=on_event,
                     )
                 except Exception as exc:

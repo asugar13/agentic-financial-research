@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 llm = ["openai>=2,<3"]
+bedrock = ["boto3[crt]>=1.43.124,<2"]
 dev = ["pytest>=8,<10"]
 ui = ["streamlit>=1.66,<2"]
 
