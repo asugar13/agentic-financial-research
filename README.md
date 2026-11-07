@@ -11,15 +11,14 @@ dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
 
 ## Open the Streamlit UI
 
-From the repository root:
+From the repository root, using the environment described in [Install and test](#install-and-test):
 
 ```sh
 .venv/bin/python -m pip install -c requirements.lock -e '.[ui]'
 .venv/bin/streamlit run src/financial_research/streamlit_app.py --server.address 127.0.0.1
 ```
 
-On Python 3.11, omit `-c requirements.lock` (the lock currently pins NumPy 2.5.4, which
-requires Python 3.12+). Open <http://localhost:8501>.
+Open <http://localhost:8501>.
 Choose **Offline demo** for a first run without
 credentials or a model. **Local Ollama** is the default for real questions; start
 Ollama and install the model shown under **Research settings**. FRED requests use
@@ -188,7 +187,7 @@ strategy backtest.
 
 ## Use Amazon Bedrock
 
-Install the optional AWS SDK (including CRT support for `aws login` credentials):
+Install the optional Bedrock dependencies in the same `.venv` used to run the UI or CLI:
 
 ```sh
 .venv/bin/python -m pip install -c requirements.lock -e '.[ui,bedrock]'
@@ -197,9 +196,12 @@ export AWS_REGION=eu-north-1
 aws login --profile financial-research --region eu-north-1
 ```
 
-As with the UI installation, omit the constraints file on Python 3.11. Use an
-AWS profile you have configured with model access. This project's selected Region
-is Stockholm. The default model is Qwen3-32B (`qwen.qwen3-32b-v1:0`).
+Use an AWS profile with access to the selected model. The Python AWS SDK uses
+that profile's cached login credentials. One valid login can serve multiple
+research runs; renew it with `aws login` when it expires. Credentials are not
+entered in the UI or saved in run files.
+
+The default model is Qwen3-32B (`qwen.qwen3-32b-v1:0`).
 
 ```sh
 .venv/bin/python -m financial_research \
@@ -207,19 +209,34 @@ is Stockholm. The default model is Qwen3-32B (`qwen.qwen3-32b-v1:0`).
   --mode bedrock --symbols AAPL --start-date 2025-01-01 --end-date 2025-12-31
 ```
 
-Or start the UI from that terminal and select **Amazon Bedrock**. The server uses
-the AWS credential chain; credentials are not entered in the UI or saved in run
-files. Renew the browser login when it expires. Select another supported model
-with `--model` or `BEDROCK_MODEL`; Region comes from `AWS_REGION`,
-`AWS_DEFAULT_REGION`, or the Stockholm default. Model capabilities differ, so
-check tool calling and structured-output support before switching.
+Or start the UI from that terminal and select **Amazon Bedrock**.
+
+`BEDROCK_MODEL` is an optional environment variable containing the default model
+ID for **both the CLI and Streamlit**. Override it with the CLI's `--model` option
+or Streamlit's **Bedrock model ID** field. Region comes from `AWS_REGION`, then
+`AWS_DEFAULT_REGION`, or defaults to this project's selected Region, Stockholm
+(`eu-north-1`).
 
 [`bedrock_model.py`](src/financial_research/bedrock_model.py) implements the same
-model interface using the Converse API. Plans, reports, and reviews request JSON
-schemas; next-action decisions request one native tool call. Python validates
-returned objects and citations as in local mode. Each SDK call has a 4,096-output-token
-limit and at most two attempts. These are billed model requests, separate from the
-data-tool-call budget; review adds further requests.
+model interface using AWS's **Converse API**: send messages and instructions to
+a Bedrock model and receive its response. Plans, reports, and reviews request
+JSON matching a supplied schema; next-action decisions request a tool name and
+arguments as a native tool call. Python validates returned objects and citations
+as in local mode.
+
+These Bedrock API features depend on the selected model. A model being able to
+generate JSON text does not guarantee support for native tool calls or
+schema-constrained JSON. The default Qwen model has been verified with both;
+when switching, check the model's features in
+[AWS's model catalog](https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html).
+
+**The [4,096-token output limit](https://github.com/asugar13/agentic-financial-research/blob/c691547a191712bb0b62add0489bacd203b383f2/src/financial_research/bedrock_model.py#L69) applies to each individual model call.** A plan,
+each tool-selection decision, a draft report, a critique, and any revision each
+have their own allowance. Input tokens are separate, and the whole research run
+can generate more than 4,096 output tokens. If a response hits the limit, the run
+fails rather than accepting potentially incomplete JSON. Each SDK call allows
+at most two attempts. The data-tool-call budget is separate from these model
+requests; enabling review adds a critique and, when needed, a revision request.
 
 The CLI and UI show reported input/output token totals. `run.json` saves them in
 `model_usage`, along with the adapter request count and `model_region`, including failed
@@ -422,14 +439,17 @@ and the [LangGraph graph API](https://docs.langchain.com/oss/python/langgraph/gr
 
 ## Install and test
 
-Python 3.11 or later; tested locally with Python 3.14.3. The locked dependencies
-require Python 3.12+; on 3.11, omit `-c requirements.lock` to resolve compatible versions.
+The installation commands in this README use **Python 3.12 or later** with pinned
+dependencies. Tested locally with Python 3.14.3.
 
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,ui,bedrock]'
 .venv/bin/python -m pytest
 ```
+
+Python 3.11 is also supported: omit `-c requirements.lock` from installation
+commands so pip can resolve compatible dependency versions.
 
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
