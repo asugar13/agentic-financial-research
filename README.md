@@ -39,7 +39,9 @@ research. The latest result stays in the browser session; refreshing the page
 clears that view, but the saved files remain on disk. Failed runs retain the same
 diagnostics and partial evidence as the CLI.
 
-This is the local interface. Hosted inference and AWS deployment come next.
+Choose **Amazon Bedrock** to use a hosted model while the interface runs locally.
+Install the `bedrock` extra and configure AWS credentials as described below.
+AWS deployment is a separate step.
 
 ## Run the offline demonstration
 
@@ -114,7 +116,7 @@ and, when needed, one revision request; these do not consume the data-tool budge
 The scripted demo returns an empty critique without an LLM call when review is enabled.
 
 `DemoModel` is intentionally scripted; it teaches graph execution, not autonomous
-research. In `ollama` and `llm` modes, the same graph uses native model function calls to choose
+research. In `ollama`, `bedrock`, and `llm` modes, the same graph uses native model function calls to choose
 the next tool, its arguments, or an early stop. Fixture mode offers
 `get_market_prices`, `get_macro_series`, `search_news`, and `finish_research`.
 Real-data mode offers `get_market_prices`, `get_macro_series`, `analyze_prices`,
@@ -183,6 +185,51 @@ Returns exclude dividends. Missing sessions make volatility annualization
 approximate. Undefined or insufficient-data results are reported as `null`.
 Correlation does not establish causation; this is historical analysis, not a
 strategy backtest.
+
+## Use Amazon Bedrock
+
+Install the optional AWS SDK (including CRT support for `aws login` credentials):
+
+```sh
+.venv/bin/python -m pip install -c requirements.lock -e '.[ui,bedrock]'
+export AWS_PROFILE=financial-research
+export AWS_REGION=eu-north-1
+aws login --profile financial-research --region eu-north-1
+```
+
+As with the UI installation, omit the constraints file on Python 3.11. Use an
+AWS profile you have configured with model access. This project's selected Region
+is Stockholm. The default model is Qwen3-32B (`qwen.qwen3-32b-v1:0`).
+
+```sh
+.venv/bin/python -m financial_research \
+  "How did AAPL closing prices change during 2025?" \
+  --mode bedrock --symbols AAPL --start-date 2025-01-01 --end-date 2025-12-31
+```
+
+Or start the UI from that terminal and select **Amazon Bedrock**. The server uses
+the AWS credential chain; credentials are not entered in the UI or saved in run
+files. Renew the browser login when it expires. Select another supported model
+with `--model` or `BEDROCK_MODEL`; Region comes from `AWS_REGION`,
+`AWS_DEFAULT_REGION`, or the Stockholm default. Model capabilities differ, so
+check tool calling and structured-output support before switching.
+
+[`bedrock_model.py`](src/financial_research/bedrock_model.py) implements the same
+model interface using the Converse API. Plans, reports, and reviews request JSON
+schemas; next-action decisions request one native tool call. Python validates
+returned objects and citations as in local mode. Each SDK call has a 4,096-output-token
+limit and at most two attempts. These are billed model requests, separate from the
+data-tool-call budget; review adds further requests.
+
+The CLI and UI show reported input/output token totals. `run.json` saves them in
+`model_usage`, along with the adapter request count and `model_region`, including failed
+runs. Counters are per research run. SDK retries and requests that fail without
+returning usage can make these totals incomplete; AWS Billing is the source of
+actual charges. No price estimate is hardcoded into the app.
+
+References: [Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html),
+[structured outputs](https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html),
+and [AWS login credentials in boto3](https://docs.aws.amazon.com/boto3/latest/guide/credentials.html#login-with-console-credentials).
 
 ## Use local Qwen with Ollama
 
@@ -380,13 +427,13 @@ require Python 3.12+; on 3.11, omit `-c requirements.lock` to resolve compatible
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,ui]'
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,ui,bedrock]'
 .venv/bin/python -m pytest
 ```
 
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
-is a development dependency; the OpenAI SDK and Streamlit are optional dependencies.
+is a development dependency; the OpenAI/AWS SDKs and Streamlit are optional dependencies.
 UI tests use [pytest.importorskip](https://github.com/asugar13/agentic-financial-research/blob/4038116bae0692e626c66c6485526a93ae138a2f/tests/test_streamlit_app.py#L15)
 to skip the test module when Streamlit is not installed; CI installs and runs them.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
