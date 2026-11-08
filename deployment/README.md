@@ -10,11 +10,11 @@ flowchart LR
     Server -->|Model requests| Bedrock["Bedrock: Qwen3 32B"]
     Server -->|Price requests| Yahoo["Yahoo Finance"]
     Server --> Disk["EBS disk: saved reports and state"]
-    Server -.-> FRED["FRED: API key pending"]
+    Server -->|Macro requests| FRED["FRED"]
 ```
 
-Hosted-preview follow-up: add the FRED API key to the runtime SecureString and
-verify a real macro request. Price research already works without it.
+FRED uses the API key stored in the runtime SecureString. The hosted preview
+has been verified with a real DFII10 macro request.
 
 Bedrock serves the existing Qwen model on demand; there is no dedicated model
 instance in this stack. The server's IAM role authorizes its model requests.
@@ -125,6 +125,13 @@ SHA-256, extract it, and execute `host.sh`. That script builds the app image and
 starts the app and Caddy containers. The private bucket lets EC2 retrieve a release
 using its IAM role, without storing GitHub credentials on the server.
 
+The Amazon Linux image includes SSM Agent, which the template starts during boot.
+It connects outbound to Systems Manager over HTTPS and executes authorized Run
+Command requests on the server, so no inbound SSH connection is needed.
+`host.sh` reads the encrypted runtime settings from Parameter Store and passes
+`FRED_API_KEY` to the app container; the existing macro tool reads that environment
+variable when calling FRED. Configuring the key does not require changing Python code.
+
 The instance role has the standard `AmazonSSMManagedInstanceCore` administration
 permissions, plus access to the release prefix, runtime settings, and the selected
 Qwen foundation model. The SSM managed policy includes broader Parameter Store
@@ -196,8 +203,11 @@ and saved demo files surviving a container restart. AWS's read-only `ValidateTem
 accepted the template; this does not verify provisioning permissions or live connectivity.
 
 The live preview was verified on 2026-11-08: public HTTPS and password protection,
-authenticated WebSocket access, offline research, a real Bedrock/Yahoo research
-run through the EC2 role, and run artifacts on the host's persistent storage.
+authenticated WebSocket access, offline research, real Bedrock/Yahoo and
+Bedrock/FRED research runs through the EC2 role, and run artifacts on the host's
+persistent storage. The FRED run collected 249 DFII10 observations for 2025 and
+saved a cited report. The FRED key was added to the existing runtime SecureString
+without replacing the visitor login; HTTPS and login checks passed after reloading.
 The first launch exposed restrictive source permissions; the Dockerfile now makes
 the source/config readable by the app user, and CI reproduces those permissions.
 The complete `deploy.py` command still needs an end-to-end verification; the live
