@@ -1,0 +1,12 @@
+# Only application files enter the build context; credentials, runs, and notes stay out.
+*
+!Dockerfile
+!pyproject.toml
+!requirements.lock
+!src/
+!src/**
+!.streamlit/
+!.streamlit/config.toml
+**/__pycache__/**
+**/*.py[cod]
+**/*.egg-info/**

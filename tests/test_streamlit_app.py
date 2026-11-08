@@ -220,3 +220,15 @@ def test_bedrock_selection_uses_the_same_runner_and_displays_usage(app, monkeypa
     app.run()
     assert selected == ["configured-bedrock-model"]
     assert len(app.get("download_button")) == 3
+
+
+def test_hosted_mode_defaults_to_bedrock_and_keeps_demo_available(monkeypatch, tmp_path):
+    monkeypatch.setenv("RESEARCH_HOSTED", "1")
+    monkeypatch.chdir(tmp_path)
+    app = AppTest.from_file(str(APP), default_timeout=30).run()
+    assert app.radio(key="mode").options == ["Amazon Bedrock", "Offline demo"]
+    assert app.radio(key="mode").value == "Amazon Bedrock"
+    app.radio(key="mode").set_value("Offline demo").run()
+    submit(app)
+    assert app.status[0].state == "complete"
+    assert len(app.get("download_button")) == 3
