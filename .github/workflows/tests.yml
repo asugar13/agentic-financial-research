@@ -23,9 +23,46 @@ jobs:
           cache-dependency-path: requirements.lock
       - name: Install compatible dependencies on Python 3.11
         if: matrix.python == '3.11'
-        run: python -m pip install -e '.[dev,llm,ui,bedrock]'
+        run: python -m pip install -e '.[dev,llm,ui,bedrock,deploy]'
       - name: Install locked dependencies on Python 3.14
         if: matrix.python == '3.14'
-        run: python -m pip install -c requirements.lock -e '.[dev,llm,ui,bedrock]'
+        run: python -m pip install -c requirements.lock -e '.[dev,llm,ui,bedrock,deploy]'
       - run: python -m pytest
       - run: python -m financial_research --mode demo --output runs/ci
+  deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Validate CloudFormation properties
+        run: |
+          python -m pip install cfn-lint==1.60.0
+          cfn-lint deployment/stack.yaml --regions eu-north-1
+      - name: Check infrastructure security rules
+        run: |
+          curl --fail --silent --show-error --location \
+            https://github.com/aws-cloudformation/cloudformation-guard/releases/download/3.2.1/cfn-guard-v3-x86_64-ubuntu-latest.tar.gz \
+            --output "$RUNNER_TEMP/guard.tar.gz"
+          echo "09c2b8cfd81d513374a8da89d4805dc55006a3da52bbf598e272022d4d198e94  $RUNNER_TEMP/guard.tar.gz" | sha256sum --check --status
+          mkdir "$RUNNER_TEMP/guard"
+          tar --extract --gzip --file "$RUNNER_TEMP/guard.tar.gz" --directory "$RUNNER_TEMP/guard" --strip-components=1
+          "$RUNNER_TEMP/guard/cfn-guard" validate --rules deployment/security.guard --data deployment/stack.yaml --output-format json --show-summary none
+      - name: Check release script syntax
+        run: bash -n deployment/host.sh
+      - name: Build and smoke-test the app without AWS credentials
+        run: |
+          docker build --build-arg APP_REVISION="$GITHUB_SHA" --tag financial-research:ci .
+          docker run --detach --name research-smoke --env RESEARCH_HOSTED=1 --publish 127.0.0.1:8501:8501 financial-research:ci
+          for attempt in $(seq 1 30); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' research-smoke)" = healthy ]; then break; fi
+            sleep 2
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' research-smoke)" = healthy
+          curl --fail http://127.0.0.1:8501/_stcore/health
+          docker exec research-smoke python -m financial_research --mode demo --output runs/container-smoke
+          docker exec research-smoke sh -c 'test -s /app/runs/container-smoke/*/report.md'

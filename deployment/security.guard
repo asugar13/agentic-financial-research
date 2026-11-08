@@ -1,0 +1,53 @@
+# Project-specific checks, rather than a claim of compliance with a full framework.
+let buckets = Resources.*[ Type == 'AWS::S3::Bucket' ]
+rule private_release_storage {
+    %buckets !empty
+    %buckets {
+        DeletionPolicy == 'Retain'
+        UpdateReplacePolicy == 'Retain'
+        Properties {
+            PublicAccessBlockConfiguration {
+                BlockPublicAcls == true
+                IgnorePublicAcls == true
+                BlockPublicPolicy == true
+                RestrictPublicBuckets == true
+            }
+            BucketEncryption.ServerSideEncryptionConfiguration[*].ServerSideEncryptionByDefault.SSEAlgorithm == 'AES256'
+            VersioningConfiguration.Status == 'Enabled'
+        }
+    }
+}
+
+let servers = Resources.*[ Type == 'AWS::EC2::Instance' ]
+rule bounded_server {
+    %servers !empty
+    %servers.Properties {
+        InstanceType == 't4g.small'
+        CreditSpecification.CPUCredits == 'standard'
+        MetadataOptions.HttpTokens == 'required'
+        MetadataOptions.HttpPutResponseHopLimit == 2
+        BlockDeviceMappings[*].Ebs {
+            Encrypted == true
+            VolumeSize == 20
+            DeleteOnTermination == false
+        }
+    }
+}
+
+let groups = Resources.*[ Type == 'AWS::EC2::SecurityGroup' ]
+rule public_web_ports_only {
+    %groups !empty
+    %groups.Properties.SecurityGroupIngress[*] {
+        IpProtocol == 'tcp'
+        FromPort IN [80, 443]
+        ToPort IN [80, 443]
+        FromPort == ToPort
+    }
+}
+
+rule artifact_transport_encrypted {
+    Resources.ArtifactTransport.Properties.PolicyDocument.Statement[*] {
+        Effect == 'Deny'
+        Condition.Bool.'aws:SecureTransport' == false
+    }
+}

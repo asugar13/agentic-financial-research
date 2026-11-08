@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Financial research web app on one small server, using hosted inference to keep compute costs low.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    ref:
+      - at: deployment/README.md
+        has: Architecture, release procedure, storage retention, and costs.
+Parameters:
+  DomainName:
+    Type: String
+    Description: Hostname pointing to the server, for example your-name.duckdns.org.
+    AllowedPattern: '(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}'
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Linux 2023 ARM64 AMI. The deployment script resolves it once and preserves it on updates.
+Rules:
+  SelectedRegion:
+    Assertions:
+      - Assert: !Equals [!Ref 'AWS::Region', eu-north-1]
+        AssertDescription: This project's selected Region is eu-north-1.
+Resources:
+  # One public subnet avoids a load balancer and NAT gateway's fixed monthly costs.
+  Network:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  Gateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Network
+      InternetGatewayId: !Ref Gateway
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Network
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: false
+  Routes:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Network
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref Routes
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Gateway
+  SubnetRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref Routes
+
+  # Private release bundles let the server deploy a private GitHub repository without a GitHub token.
+  Artifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+  ArtifactTransport:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Artifacts
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Artifacts.Arn, !Sub '${Artifacts.Arn}/*']
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      # Standard SSM node permissions support releases and administration without SSH.
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Policies:
+        - PolicyName: ResearchRuntime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Converse uses InvokeModel; extra optional API modes from the generated
+              # baseline (guardrails, bearer tokens, built-in tools) are not used here.
+              - Sid: InvokeSelectedModel
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/qwen.qwen3-32b-v1:0'
+              - Sid: ReadRelease
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${Artifacts.Arn}/releases/*'
+              - Sid: ReadSettings
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/financial-research/${AWS::StackName}/runtime'
+              - Sid: DecryptSettings
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub 'ssm.${AWS::Region}.${AWS::URLSuffix}'
+                    kms:EncryptionContext:PARAMETER_ARN: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/financial-research/${AWS::StackName}/runtime'
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+  WebAccess:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTPS app and HTTP certificate validation; no SSH or direct Streamlit access.
+      VpcId: !Ref Network
+      SecurityGroupIngress:
+        # Public web access is intentional. Caddy redirects HTTP to HTTPS and authenticates all app requests.
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+  Server:
+    Type: AWS::EC2::Instance
+    DependsOn: [InternetRoute, SubnetRoutes]
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: t4g.small
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref WebAccess]
+      CreditSpecification:
+        CPUCredits: standard
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        # Docker adds a network hop; the SDK still uses IMDSv2 credentials.
+        HttpPutResponseHopLimit: 2
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            Encrypted: true
+            # Preserve research files when explicitly deleting/replacing the server.
+            # The retained volume is billed until separately removed after backup.
+            DeleteOnTermination: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-app'
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -euo pipefail
+          # The fixed public IP is associated after the instance is created.
+          installed=false
+          for attempt in $(seq 1 30); do
+            if dnf install -y docker; then installed=true; break; fi
+            sleep 10
+          done
+          if [ "$installed" != true ]; then
+            echo 'Docker installation failed; inspect /var/log/cloud-init-output.log.' >&2
+            exit 1
+          fi
+          systemctl enable --now docker amazon-ssm-agent
+          install -d -m 0700 /var/lib/financial-research
+          install -d -m 0755 /opt/financial-research/releases
+  Address:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachment
+    Properties:
+      Domain: vpc
+  ServerAddress:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt Address.AllocationId
+      InstanceId: !Ref Server
+Outputs:
+  InstanceId:
+    Description: Server managed through Systems Manager.
+    Value: !Ref Server
+  PublicIp:
+    Description: Put this fixed address in your hostname's A record.
+    Value: !Ref Address
+  ArtifactBucket:
+    Description: Private bucket containing committed release bundles.
+    Value: !Ref Artifacts
+  RuntimeParameter:
+    Description: SecureString settings managed by the deployment script, outside this stack.
+    Value: !Sub '/financial-research/${AWS::StackName}/runtime'
+  AppUrl:
+    Description: Available once DNS points to PublicIp and Caddy issues its certificate.
+    Value: !Sub 'https://${DomainName}'
