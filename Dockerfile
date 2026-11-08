@@ -16,7 +16,9 @@ COPY pyproject.toml requirements.lock ./
 COPY src ./src
 RUN python -m pip install --no-cache-dir -c requirements.lock '.[ui,bedrock]'
 COPY .streamlit ./.streamlit
-RUN mkdir runs && chown research:research runs
+# Releases are extracted with a private umask; the app user must still read its code.
+RUN chmod -R a+rX src .streamlit \
+    && mkdir runs && chown research:research runs
 
 USER research
 EXPOSE 8501

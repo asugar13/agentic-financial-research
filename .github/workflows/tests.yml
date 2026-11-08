@@ -56,6 +56,8 @@ jobs:
         run: bash -n deployment/host.sh
       - name: Build and smoke-test the app without AWS credentials
         run: |
+          # Reproduce the restrictive archive permissions used on the server.
+          chmod -R go-rwx src .streamlit
           docker build --build-arg APP_REVISION="$GITHUB_SHA" --tag financial-research:ci .
           docker run --detach --name research-smoke --env RESEARCH_HOSTED=1 --publish 127.0.0.1:8501:8501 financial-research:ci
           for attempt in $(seq 1 30); do

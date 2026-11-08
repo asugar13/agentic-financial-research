@@ -6,14 +6,22 @@ using its instance role; visitors need neither AWS credentials nor Ollama.
 
 ```mermaid
 flowchart LR
-    Browser -->|HTTPS + shared login| Caddy
-    subgraph EC2 t4g.small
-        Caddy -->|private Docker network| Streamlit
-        Streamlit --> Runs[Saved runs on disk]
-    end
-    Streamlit --> Bedrock[Bedrock Qwen3 32B]
-    Streamlit --> Sources[Yahoo / FRED]
+    Browser -->|HTTPS and login| Server["EC2 server: Caddy + Streamlit + Python"]
+    Server -->|Model requests| Bedrock["Bedrock: Qwen3 32B"]
+    Server -->|Price requests| Yahoo["Yahoo Finance"]
+    Server --> Disk["EBS disk: saved reports and state"]
+    Server -.-> FRED["FRED: API key pending"]
 ```
+
+Hosted-preview follow-up: add the FRED API key to the runtime SecureString and
+verify a real macro request. Price research already works without it.
+
+Bedrock serves the existing Qwen model on demand; there is no dedicated model
+instance in this stack. The server's IAM role authorizes its model requests.
+Our Python [`ResearchState`](../src/financial_research/state.py) holds the run's
+question, plan, evidence, and tool results. Each
+[`BedrockModel` request](../src/financial_research/bedrock_model.py) sends the
+current `model_context()` summary; conversation context is supplied by our app.
 
 Review the files in this order:
 
@@ -53,7 +61,9 @@ Stopping the instance still leaves disk and public IPv4 charges.
 
 ## Before the first launch
 
-Only run the deployment command after reviewing and merging this PR.
+Review the infrastructure and costs before launching. Deploy from a committed
+checkout; a PR branch can be tested before merging. If your review changes are
+unstaged, save them locally and switch to the committed branch first.
 
 1. In **AWS Settings → View all projects → FinancialResearch → Overview → Additional Info**,
    confirm the selected Region is `eu-north-1`. Check **AWS Settings → Billing** for
@@ -99,10 +109,21 @@ paid inference; the tool-call budget bounds one run, not aggregate monthly spend
 
 ## What the release does
 
-`deploy.py` archives only committed application/deployment paths. Personal notes,
-`.aws`, `.git`, and `runs` are outside the release. It uploads this archive to a
-private, encrypted, versioned S3 bucket, then uses Systems Manager to download it,
-verify its SHA-256, and run `host.sh`. No GitHub token is installed on the server.
+`stack.yaml` is an AWS CloudFormation template written in YAML. YAML is the file
+format; CloudFormation is the AWS service that creates and updates the resources
+declared in it as a group called a stack. This project uses CloudFormation for its
+infrastructure rather than Terraform. The template defines the server, networking,
+permissions, and release bucket; runtime secrets are configured separately.
+
+Once that infrastructure exists, the application needs to be installed on EC2.
+`deploy.py` packages committed Python source, Dockerfile, dependencies, and config
+into a `.tar.gz` archive. Personal notes, `.aws`, `.git`, and `runs` are excluded.
+S3 holds these release archives; saved research reports remain on the EC2 disk.
+
+Systems Manager runs commands on EC2: download the archive from S3, verify its
+SHA-256, extract it, and execute `host.sh`. That script builds the app image and
+starts the app and Caddy containers. The private bucket lets EC2 retrieve a release
+using its IAM role, without storing GitHub credentials on the server.
 
 The instance role has the standard `AmazonSSMManagedInstanceCore` administration
 permissions, plus access to the release prefix, runtime settings, and the selected
@@ -174,5 +195,10 @@ and wrong passwords returning 401, an authenticated Streamlit WebSocket handshak
 and saved demo files surviving a container restart. AWS's read-only `ValidateTemplate`
 accepted the template; this does not verify provisioning permissions or live connectivity.
 
-Creating the stack, obtaining a public certificate, accessing Bedrock from the
-instance role, and testing a complete browser run require the first live deployment.
+The live preview was verified on 2026-11-08: public HTTPS and password protection,
+authenticated WebSocket access, offline research, a real Bedrock/Yahoo research
+run through the EC2 role, and run artifacts on the host's persistent storage.
+The first launch exposed restrictive source permissions; the Dockerfile now makes
+the source/config readable by the app user, and CI reproduces those permissions.
+The complete `deploy.py` command still needs an end-to-end verification; the live
+checks used individual AWS operations and temporary verification scripts.
