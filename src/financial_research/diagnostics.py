@@ -2,6 +2,7 @@
 
 import json
 import hashlib
+import os
 from importlib.metadata import PackageNotFoundError, version
 import platform
 import subprocess
@@ -28,13 +29,16 @@ class RunRecorder:
         self.output = output
         output.mkdir(parents=True)
         self.started = time.perf_counter()
-        try:
-            revision = subprocess.run(
-                ["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent,
-                capture_output=True, text=True, timeout=2, check=False,
-            ).stdout.strip() or None
-        except (OSError, subprocess.TimeoutExpired):
-            revision = None
+        # Images exclude .git; the release build supplies its committed revision.
+        revision = os.environ.get("RESEARCH_REVISION") or None
+        if revision is None:
+            try:
+                revision = subprocess.run(
+                    ["git", "rev-parse", "HEAD"], cwd=Path(__file__).parent,
+                    capture_output=True, text=True, timeout=2, check=False,
+                ).stdout.strip() or None
+            except (OSError, subprocess.TimeoutExpired):
+                revision = None
         source = hashlib.sha256()
         for path in sorted(Path(__file__).parent.glob("*.py")):
             source.update(path.name.encode() + b"\0" + path.read_bytes())

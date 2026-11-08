@@ -1,0 +1,6 @@
+{$APP_DOMAIN} {
+    basic_auth {
+        {$APP_USERNAME} {$APP_PASSWORD_HASH}
+    }
+    reverse_proxy financial-research-app:8501
+}
