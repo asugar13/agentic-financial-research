@@ -21,6 +21,7 @@ Rules:
       - Assert: !Equals [!Ref 'AWS::Region', eu-north-1]
         AssertDescription: This project's selected Region is eu-north-1.
 Resources:
+  # Infrastructure only: deploy.py installs the application afterward through SSM.
   # One public subnet avoids a load balancer and NAT gateway's fixed monthly costs.
   Network:
     Type: AWS::EC2::VPC
@@ -28,6 +29,7 @@ Resources:
       CidrBlock: 10.42.0.0/16
       EnableDnsSupport: true
       EnableDnsHostnames: true
+
   Gateway:
     Type: AWS::EC2::InternetGateway
   GatewayAttachment:
@@ -40,7 +42,9 @@ Resources:
     Properties:
       VpcId: !Ref Network
       CidrBlock: 10.42.1.0/24
+      # The separate Elastic IP below provides the server's stable public address.
       MapPublicIpOnLaunch: false
+
   Routes:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -50,6 +54,7 @@ Resources:
     DependsOn: GatewayAttachment
     Properties:
       RouteTableId: !Ref Routes
+      # Internet access is needed for AWS APIs, data providers, and container downloads.
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref Gateway
   SubnetRoutes:
@@ -90,6 +95,7 @@ Resources:
               Bool:
                 aws:SecureTransport: false
 
+  # These permissions belong to EC2; your local CLI profile is not copied to the server.
   InstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -126,14 +132,17 @@ Resources:
                 Effect: Allow
                 Action: kms:Decrypt
                 Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+                # Restrict this decrypt permission to the runtime value read through SSM.
                 Condition:
                   StringEquals:
                     kms:ViaService: !Sub 'ssm.${AWS::Region}.${AWS::URLSuffix}'
                     kms:EncryptionContext:PARAMETER_ARN: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/financial-research/${AWS::StackName}/runtime'
+  # Attach the role to EC2 so its SDK/CLI can obtain temporary AWS credentials.
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Roles: [!Ref InstanceRole]
+
   WebAccess:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -151,6 +160,7 @@ Resources:
           CidrIp: 0.0.0.0/0
   Server:
     Type: AWS::EC2::Instance
+    # Bootstrapping needs internet access, so create the subnet's route first.
     DependsOn: [InternetRoute, SubnetRoutes]
     Properties:
       ImageId: !Ref ImageId
@@ -177,6 +187,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-app'
+      # First-boot setup installs Docker and starts SSM Agent. host.sh installs the app later.
       UserData:
         Fn::Base64: |
           #!/bin/bash
@@ -194,6 +205,8 @@ Resources:
           systemctl enable --now docker amazon-ssm-agent
           install -d -m 0700 /var/lib/financial-research
           install -d -m 0755 /opt/financial-research/releases
+
+  # DuckDNS points to this fixed address, which survives instance stop/start.
   Address:
     Type: AWS::EC2::EIP
     DependsOn: GatewayAttachment
@@ -204,6 +217,8 @@ Resources:
     Properties:
       AllocationId: !GetAtt Address.AllocationId
       InstanceId: !Ref Server
+
+# deploy.py reads these IDs to upload releases and target the correct SSM-managed server.
 Outputs:
   InstanceId:
     Description: Server managed through Systems Manager.

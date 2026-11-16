@@ -53,6 +53,7 @@ jobs:
           tar --extract --gzip --file "$RUNNER_TEMP/guard.tar.gz" --directory "$RUNNER_TEMP/guard" --strip-components=1
           "$RUNNER_TEMP/guard/cfn-guard" validate --rules deployment/security.guard --data deployment/stack.yaml --output-format json --show-summary none
       - name: Check release script syntax
+        # -n checks Bash syntax without executing host.sh; deployment remains manual.
         run: bash -n deployment/host.sh
       - name: Build and smoke-test the app without AWS credentials
         run: |
