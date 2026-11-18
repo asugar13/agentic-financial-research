@@ -40,7 +40,8 @@ diagnostics and partial evidence as the CLI.
 
 Choose **Amazon Bedrock** to use a hosted model while the interface runs locally.
 Install the `bedrock` extra and configure AWS credentials as described below.
-AWS deployment is a separate step.
+For an HTTPS deployment with a shared login and server-side Bedrock access, see the
+[AWS deployment guide](deployment/README.md). Review its cost estimate before launching.
 
 ## Run the offline demonstration
 

@@ -155,7 +155,11 @@ def main() -> None:
 
     with st.sidebar:
         st.header("New research")
-        mode = st.radio("Data and model", ["Local Ollama", "Amazon Bedrock", "Offline demo"], key="mode")
+        # The hosted server has Bedrock access but no local Ollama runtime.
+        modes = ["Amazon Bedrock", "Offline demo"] if os.environ.get("RESEARCH_HOSTED") == "1" else [
+            "Local Ollama", "Amazon Bedrock", "Offline demo",
+        ]
+        mode = st.radio("Data and model", modes, key="mode")
         demo = mode == "Offline demo"
         bedrock = mode == "Amazon Bedrock"
         year = date.today().year - 1
