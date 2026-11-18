@@ -13,8 +13,7 @@ flowchart LR
     Server -->|Macro requests| FRED["FRED"]
 ```
 
-FRED uses the API key stored in the runtime SecureString. The hosted preview
-has been verified with a real DFII10 macro request.
+FRED uses the API key stored in the runtime SecureString.
 
 Bedrock serves the existing Qwen model on demand; there is no dedicated model
 instance in this stack. The server's IAM role authorizes its model requests.
@@ -62,8 +61,7 @@ Stopping the instance still leaves disk and public IPv4 charges.
 ## Before the first launch
 
 Review the infrastructure and costs before launching. Deploy from a committed
-checkout; a PR branch can be tested before merging. If your review changes are
-unstaged, save them locally and switch to the committed branch first.
+checkout; a PR branch can be tested before merging.
 
 1. In **AWS Settings → View all projects → FinancialResearch → Overview → Additional Info**,
    confirm the selected Region is `eu-north-1`. Check **AWS Settings → Billing** for
@@ -108,6 +106,39 @@ Share the app login only with intended visitors. Authenticated visitors can trig
 paid inference; the tool-call budget bounds one run, not aggregate monthly spend.
 
 ## What the release does
+
+This is the workflow when you run [`deploy.py`](deploy.py) on your Mac:
+
+```mermaid
+flowchart TD
+    subgraph Local["Your Mac: deploy.py"]
+        Validate["Validate CLI options, AWS plan status, and stack.yaml"]
+        Bundle["1. bundle(): archive local Git HEAD<br/>and calculate the archive's SHA-256"]
+        Settings["configure(): reuse runtime settings<br/>or prompt and save them in Parameter Store"]
+        Stack["2. ensure_stack(): ask CloudFormation to create/update<br/>the infrastructure and wait for it to be ready"]
+        Upload["3. Upload the release archive to S3"]
+        Ready["wait_for_ssm(): wait for EC2's SSM Agent to be online"]
+        Send["4. Send release_command() through SSM Run Command"]
+        Validate --> Bundle --> Settings --> Stack --> Upload --> Ready --> Send
+    end
+
+    subgraph Remote["EC2: SSM Agent executes the release commands"]
+        Boot["Wait for first-boot setup to finish"]
+        Download["Download the archive from S3<br/>verify SHA-256, then extract the source"]
+        Host["Run host.sh: read Parameter Store settings<br/>and build the app image"]
+        Health["Start the candidate container<br/>and check Streamlit health"]
+        Replace["Replace the app and Caddy containers"]
+        Boot --> Download --> Host --> Health --> Replace
+    end
+
+    Send --> Boot
+    Replace --> Result["5. Your Mac: wait for the SSM command result<br/>and report success or failure"]
+    Result -.-> Manual["Manual: update DuckDNS if needed<br/>then check HTTPS, login, and research in your browser"]
+```
+
+`configure()` prompts only when settings are missing or `--configure` is supplied.
+The health check must pass before replacing the app. The script prints the public
+IP but does not update DuckDNS or perform the browser checks.
 
 `stack.yaml` is an AWS CloudFormation template written in YAML. YAML is the file
 format; CloudFormation is the AWS service that creates and updates the resources
@@ -210,5 +241,3 @@ saved a cited report. The FRED key was added to the existing runtime SecureStrin
 without replacing the visitor login; HTTPS and login checks passed after reloading.
 The first launch exposed restrictive source permissions; the Dockerfile now makes
 the source/config readable by the app user, and CI reproduces those permissions.
-The complete `deploy.py` command still needs an end-to-end verification; the live
-checks used individual AWS operations and temporary verification scripts.
