@@ -7,7 +7,7 @@ supplies prices; FRED supplies macro data.
 
 **Local Ollama and real data are the defaults.** Provide a question, symbols, and
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
-`--mode demo` for the offline synthetic example. Real news integration is still pending.
+`--mode demo` for the offline synthetic example. Exa supplies web news and company announcements when configured.
 
 ## Open the Streamlit UI
 
@@ -119,7 +119,7 @@ The scripted demo returns an empty critique without an LLM call when review is e
 research. In `ollama`, `bedrock`, and `llm` modes, the same graph uses native model function calls to choose
 the next tool, its arguments, or an early stop. Fixture mode offers
 `get_market_prices`, `get_macro_series`, `search_news`, and `finish_research`.
-Real-data mode offers `get_market_prices`, `get_macro_series`, `analyze_prices`,
+Real-data mode offers `get_market_prices`, `get_macro_series`, `search_news`, `analyze_prices`,
 and `finish_research`.
 It excludes fixture news and never falls back to synthetic observations.
 
@@ -311,6 +311,29 @@ The configured scope is stored in `state.json` as `price_request`, alongside ful
 selected daily series. Model requests contain price summaries and provenance;
 daily rows are omitted from model context to avoid repeatedly filling its context
 window with the same price history. This does not alter the saved evidence.
+
+## Search Exa directly
+
+Install the news extra, then set `EXA_API_KEY` in your environment or the repository's
+Git-ignored `.env` file. Environment values take precedence over `.env`.
+
+```sh
+.venv/bin/python -m pip install -c requirements.lock -e '.[news]'
+.venv/bin/python -m financial_research.news \
+  "Prefer a specific primary or official answer page. Apple quarterly results in 2025" \
+  --objective "Find Apple's original earnings announcements and the revenue figures they report." \
+  --start-date 2025-01-01 --end-date 2025-12-31
+```
+
+This command needs no LLM or tickers. It prints URLs, provider publication dates,
+and retrieved highlights. Omit both dates for an unrestricted search.
+Undated sources and sources without excerpts are excluded; search is not exhaustive.
+
+The research agent can also select `search_news` and cite its results. It supplies
+both a search query and an objective describing the evidence needed. Searches use
+highlights, without Exa-side answer generation. In the agent flow, the configured
+research dates bound publication dates; they do not prove when an underlying event
+occurred or that it caused a price move. Real searches never use fixture news as a fallback.
 
 ## Fetch real macro data
 
@@ -517,7 +540,7 @@ The bounded critique can still miss errors or introduce regressions; it is not
 a guarantee that claims are supported. Run diagnostics record stage timings and
 failure snapshots; checkpoint/resume and a hosted tracing backend are not implemented.
 The eval runner also retains failed outputs.
-Real prices and macro data are connected; real news remains deferred.
+Real prices, macro data, and Exa web search are connected when their dependencies and credentials are configured.
 Endpoint comparisons can establish what changed, but cannot establish
 the cause of a market move. Model context does not include the full time series;
 the quant tool computes descriptive statistics from stored daily prices and

@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from financial_research import macro, prices, quant
+from financial_research import macro, news, prices, quant
 from financial_research.models import (
     Action,
     Evidence,
@@ -22,6 +22,7 @@ from financial_research.models import (
     PriceRequest,
     QuantAction,
     ToolResult,
+    WebSearchRequest,
 )
 
 PERIOD_START = date(2025, 1, 2)
@@ -124,7 +125,10 @@ def _execute_real_tool(action: Action, scope: HistoricalPriceRequest) -> ToolRes
             )
             return macro.get_macro_series(request)
         case NewsAction():
-            return ToolResult(error="Only price and macro tools are available in real-data mode; news is not connected.")
+            if not action.objective:
+                return ToolResult(error="Real news search requires an objective describing the evidence to retrieve.")
+            request = WebSearchRequest(query=action.query, objective=action.objective, rationale=action.rationale)
+            return news.search_news(request, start_date=scope.start_date, end_date=scope.end_date)
         case _:
             raise ValueError("finish_research is a routing action, not a data tool.")
 

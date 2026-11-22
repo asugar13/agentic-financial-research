@@ -80,7 +80,7 @@ def test_real_scope_offers_price_macro_and_quant_tools():
     action = model.choose_action(ResearchState(question="Compare returns.", price_request=scope))
     assert action.evidence_ids == ["E001", "E002"] and action.window == 20
     assert {tool["toolSpec"]["name"] for tool in requests[0]["toolConfig"]["tools"]} == {
-        "get_market_prices", "get_macro_series", "analyze_prices", "finish_research",
+        "get_market_prices", "get_macro_series", "search_news", "analyze_prices", "finish_research",
     }
     assert "REAL Yahoo Finance" in requests[0]["system"][0]["text"]
 
