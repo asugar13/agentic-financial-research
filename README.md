@@ -238,6 +238,8 @@ can generate more than 4,096 output tokens. If a response hits the limit, the ru
 fails rather than accepting potentially incomplete JSON. Each SDK call allows
 at most two attempts. The data-tool-call budget is separate from these model
 requests; enabling review adds a critique and, when needed, a revision request.
+Tool selection allows one additional model request to correct a response containing
+zero or multiple tool calls before failing.
 
 The CLI and UI show reported input/output token totals. `run.json` saves them in
 `model_usage`, along with the adapter request count and `model_region`, including failed
