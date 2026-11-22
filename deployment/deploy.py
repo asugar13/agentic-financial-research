@@ -63,50 +63,62 @@ def bundle(root: Path, destination: Path) -> tuple[str, str]:
     return revision, hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
-def configure(ssm, name: str, *, replace: bool = False) -> None:
+def configure(ssm, name: str, *, replace: bool = False, configure_exa: bool = False) -> None:
     """Ensure the application's encrypted runtime settings exist in Parameter Store.
 
     Args:
         ssm: Boto3 Systems Manager client for the target project and Region.
         name: Full parameter name, e.g. /financial-research/financial-research/runtime.
-        replace: Whether to prompt for and overwrite existing settings (--configure).
+        replace: Whether to replace the visitor login and FRED key (--configure).
+        configure_exa: Whether to prompt for and save an Exa key (--configure-exa).
 
-    Reuse an existing SecureString unless replacement was requested. Otherwise,
-    prompt for the visitor login and optional FRED API key, hash the password,
-    and save the settings for host.sh. This configures app secrets, not the AWS
-    CLI profile, and does not fetch FRED data. It has no return value.
+    Routine releases reuse existing settings. --configure-exa updates only the
+    Exa key, preserving the login and FRED key. Missing settings or --configure
+    prompt for a visitor login and optional FRED key. Save the settings for host.sh;
+    this configures app secrets, not the AWS CLI profile. It has no return value.
     """
     try:
         existing = ssm.get_parameter(Name=name, WithDecryption=True)["Parameter"]
     except ssm.exceptions.ParameterNotFound:
         existing = None
 
-    # Routine releases reuse the login and FRED key. Only --configure replaces them.
-    if existing and not replace:
+    if existing:
         if existing["Type"] != "SecureString":
             raise ValueError("The runtime settings parameter must be a SecureString.")
-        return
+        if not replace and not configure_exa:
+            return
+        settings = json.loads(existing["Value"])
+    else:
+        settings = {}
 
-    username = input("Shared app username [research]: ").strip() or "research"
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", username):
-        raise ValueError("Use 1–32 letters, digits, dots, underscores, or hyphens for the username.")
+    if not existing or replace:
+        username = input("Shared app username [research]: ").strip() or "research"
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", username):
+            raise ValueError("Use 1–32 letters, digits, dots, underscores, or hyphens for the username.")
 
-    # getpass prompts for a secret without showing the characters typed in the terminal.
-    password = getpass.getpass("Shared app password (12–72 bytes): ")
-    # bcrypt's input limit is measured in bytes, including multibyte characters.
-    if not 12 <= len(password.encode()) <= 72:
-        raise ValueError("Use a password containing 12–72 UTF-8 bytes.")
-    if password != getpass.getpass("Repeat app password: "):
-        raise ValueError("Passwords did not match.")
+        # getpass prompts for a secret without showing the characters typed in the terminal.
+        password = getpass.getpass("Shared app password (12–72 bytes): ")
+        # bcrypt's input limit is measured in bytes, including multibyte characters.
+        if not 12 <= len(password.encode()) <= 72:
+            raise ValueError("Use a password containing 12–72 UTF-8 bytes.")
+        if password != getpass.getpass("Repeat app password: "):
+            raise ValueError("Passwords did not match.")
 
-    fred_key = getpass.getpass("FRED API key (optional; Enter to skip): ").strip()
-    if fred_key and not re.fullmatch(r"[A-Fa-f0-9]{32}", fred_key):
-        raise ValueError("Expected a 32-character FRED API key.")
-    settings = {
-        "username": username,
-        "password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
-        "fred_api_key": fred_key,
-    }
+        fred_key = getpass.getpass("FRED API key (optional; Enter to skip): ").strip()
+        if fred_key and not re.fullmatch(r"[A-Fa-f0-9]{32}", fred_key):
+            raise ValueError("Expected a 32-character FRED API key.")
+        settings.update({
+            "username": username,
+            "password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode(),
+            "fred_api_key": fred_key,
+        })
+
+    if configure_exa:
+        exa_key = getpass.getpass("Exa API key (hidden): ").strip()
+        if not exa_key or any(character in exa_key for character in "\r\n\x00"):
+            raise ValueError("Provide a nonempty Exa API key on a single line.")
+        settings["exa_api_key"] = exa_key
+
     # Store a password hash, not the password. SecureString encrypts the settings at rest.
     ssm.put_parameter(Name=name, Type="SecureString", Value=json.dumps(settings), Overwrite=True)
 
@@ -238,6 +250,10 @@ def main(argv=None) -> int:
         "--configure", action="store_true",
         help="Prompt for and replace the saved visitor login and optional FRED API key",
     )
+    parser.add_argument(
+        "--configure-exa", action="store_true",
+        help="Save an Exa API key without replacing the existing visitor login or FRED key",
+    )
     args = parser.parse_args(argv)
 
     # Validate values used in resource names and proxy configuration before calling AWS.
@@ -279,7 +295,7 @@ def main(argv=None) -> int:
             # 1. Prepare locally: create the archive from committed HEAD and reuse runtime settings.
             artifact = Path(temporary) / "release.tar.gz"
             revision, digest = bundle(ROOT, artifact)
-            configure(ssm, parameter, replace=args.configure)
+            configure(ssm, parameter, replace=args.configure, configure_exa=args.configure_exa)
 
             # 2. Ensure infrastructure exists: CloudFormation supplies EC2 and the S3 bucket.
             print("Creating or updating the reviewed CloudFormation stack…", flush=True)

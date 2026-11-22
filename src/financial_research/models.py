@@ -69,6 +69,14 @@ class NewsRequest(ReasonedRequest):
     query: Text
 
 
+class WebSearchRequest(NewsRequest):
+    objective: Text = Field(
+        max_length=4096,
+        description="Goal for this search turn; say which documents should rank first, which should be excluded, "
+                    "and what specific facts or figures to pull from them.",
+    )
+
+
 class QuantRequest(ReasonedRequest):
     evidence_ids: list[Text] = Field(
         min_length=1, max_length=5,
@@ -97,6 +105,8 @@ class MacroAction(MacroRequest):
 
 class NewsAction(NewsRequest):
     tool: Literal["search_news"] = "search_news"
+    # Older fixture runs have no objective. Real searches require WebSearchRequest below the tool boundary.
+    objective: Text | None = Field(default=None, max_length=4096)
 
 
 class QuantAction(QuantRequest):

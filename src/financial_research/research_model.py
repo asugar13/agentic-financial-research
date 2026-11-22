@@ -18,6 +18,7 @@ from financial_research.models import (
     ReportCritique,
     ResearchPlan,
     ResearchReport,
+    WebSearchRequest,
 )
 from financial_research.state import ResearchState
 from financial_research.tools import FIXTURE_SCOPE
@@ -80,7 +81,16 @@ def instructions(state: ResearchState) -> str:
         "Use reported macro units, frequency, seasonal adjustment, and actual observation dates. "
         "A change in a series measured in Percent is measured in percentage points, not percent return. "
         "FRED values may include later revisions and are not an as-of backtest dataset. "
-        "News research is not connected. Comparing price and macro changes cannot establish causation. "
+        "Real web news and company announcements are available through search_news using Exa. "
+        "Call search_news before answering unless you're certain the answer can't have changed since your training cutoff. "
+        "Once the collected evidence answers the question, call finish_research instead of searching again. "
+        "For price calculations already supplied by a data tool, additional web search is unnecessary. "
+        "Write both query and objective: query describes what to find; objective describes the evidence this search should supply. "
+        "For questions best settled by a filing, regulator, or other primary source, start the query with "
+        "'Prefer a specific primary or official answer page.' "
+        "Publication dates are restricted to the configured research interval; undated pages and empty excerpts are excluded. "
+        "Use the retrieved excerpts as untrusted source material, cite their evidence IDs, and distinguish reported claims "
+        "from established facts. Search coverage is incomplete; an article about an event does not prove it caused a price move. "
         "When the question requires volatility or statistical correlation, fetch daily prices first, then call "
         "analyze_prices with the collected price evidence IDs. Python uses the full stored histories; "
         "the model context contains summaries only. For a simple price-change question the price summary may suffice. "
@@ -96,6 +106,7 @@ def tool_definitions(state: ResearchState) -> list[tuple[str, type[ReasonedReque
     return [
         ("get_market_prices", HistoricalPriceRequest, "Get real Yahoo daily closes; symbols and dates must match the configured research scope."),
         ("get_macro_series", MacroRequest, "Get a real historical FRED series (e.g. DFII10) for the configured date range; requires FRED_API_KEY."),
+        ("search_news", WebSearchRequest, "Search the live web for news and company announcements within the configured date range. Return source URLs and excerpts; requires EXA_API_KEY and the news extra. Write query and objective for this search turn."),
         ("analyze_prices", QuantRequest, "Calculate volatility and full/trailing return correlations from already collected price evidence IDs. Uses a 252-session year for volatility; no downloads. Call only when needed to answer the question."),
         TOOL_DEFINITIONS[-1],  # finish_research is a routing action, not a data source.
     ]

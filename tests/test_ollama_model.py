@@ -195,7 +195,7 @@ def test_real_prices_and_macro_flow_from_cli_through_model_tool_state_and_report
     assert len(saved.evidence[0].data["prices"]) == 2
     assert "REAL DATA MODE: Yahoo Finance" in report and "FRED" in report and "SYNTHETIC FIXTURE" not in report
     assert "2025-01-06 to 2025-01-07" in requests[0]["messages"][0]["content"]
-    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "analyze_prices", "finish_research"}
+    assert {tool["function"]["name"] for tool in requests[1]["tools"]} == {"get_market_prices", "get_macro_series", "search_news", "analyze_prices", "finish_research"}
     assert len(saved.evidence) == 2 and all(not item.is_fixture for item in saved.evidence)
     assert not list(tmp_path.glob("*/quant.*"))
     diagnostics = json.loads(next(tmp_path.glob("*/run.json")).read_text())

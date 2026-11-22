@@ -105,7 +105,7 @@ def test_real_data_scope_uses_the_price_and_macro_catalog_and_instructions():
     )
     action = model.choose_action(ResearchState(question="Compare IBM prices.", price_request=scope))
     assert action.series_id == "DFII10"
-    assert {tool["name"] for tool in requests[0]["tools"]} == {"get_market_prices", "get_macro_series", "analyze_prices", "finish_research"}
+    assert {tool["name"] for tool in requests[0]["tools"]} == {"get_market_prices", "get_macro_series", "search_news", "analyze_prices", "finish_research"}
     assert "REAL Yahoo Finance" in requests[0]["instructions"]
     assert "FRED" in requests[0]["instructions"]
     assert json.loads(requests[0]["input"])["price_request"]["start_date"] == "2025-01-06"

@@ -108,7 +108,7 @@ def test_separate_runs_do_not_share_evidence():
 
 
 @pytest.mark.parametrize("action, error", [
-    (NewsAction(query="IBM", rationale="Try news."), "news is not connected"),
+    (NewsAction(query="IBM", rationale="Try news."), "requires an objective"),
     (PriceAction(symbols=["MSFT"], rationale="Try an unapproved symbol."), "outside the configured research scope"),
     (PriceAction(symbols=["IBM"], start_date="2025-01-07", end_date="2025-01-08",
                  rationale="Try a different date range."), "dates are outside the configured research scope"),

@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 
 import pytest
@@ -77,6 +78,54 @@ def test_existing_settings_are_reused_without_prompting(monkeypatch):
         stub.add_response("get_parameter", {"Parameter": {"Type": "SecureString", "Value": "{}"}},
                           {"Name": "/runtime", "WithDecryption": True})
         deploy.configure(ssm, "/runtime")
+
+
+def test_configure_exa_preserves_the_existing_login_and_fred_key(monkeypatch):
+    ssm = client("ssm")
+    settings = {"username": "research", "password_hash": "existing-hash", "fred_api_key": "a" * 32}
+    monkeypatch.setattr("builtins.input", lambda _: pytest.fail("The login should not be replaced"))
+    monkeypatch.setattr(deploy.getpass, "getpass", lambda _: "test-only-exa-key")
+    sent = []
+    monkeypatch.setattr(ssm, "put_parameter", lambda **kwargs: sent.append(kwargs))
+    with Stubber(ssm) as stub:
+        stub.add_response("get_parameter", {"Parameter": {"Type": "SecureString", "Value": json.dumps(settings)}},
+                          {"Name": "/runtime", "WithDecryption": True})
+        deploy.configure(ssm, "/runtime", configure_exa=True)
+    assert sent == [{"Name": "/runtime", "Type": "SecureString", "Overwrite": True,
+                     "Value": json.dumps({**settings, "exa_api_key": "test-only-exa-key"})}]
+
+
+@pytest.mark.parametrize("key", ["", "unsafe\nvalue"])
+def test_invalid_exa_key_does_not_overwrite_runtime_settings(monkeypatch, key):
+    ssm = client("ssm")
+    monkeypatch.setattr(deploy.getpass, "getpass", lambda _: key)
+    with Stubber(ssm) as stub:
+        stub.add_response("get_parameter", {"Parameter": {"Type": "SecureString", "Value": "{}"}},
+                          {"Name": "/runtime", "WithDecryption": True})
+        with pytest.raises(ValueError, match="single line"):
+            deploy.configure(ssm, "/runtime", configure_exa=True)
+
+
+@pytest.mark.parametrize("exa_key", [None, "test-only-exa-key"])
+def test_host_passes_exa_only_to_the_app_environment(tmp_path, exa_key):
+    settings = {"username": "research", "password_hash": bcrypt.hashpw(b"test-password", bcrypt.gensalt()).decode(),
+                "fred_api_key": "a" * 32}
+    if exa_key is not None:
+        settings["exa_api_key"] = exa_key
+    (tmp_path / "settings.json").write_text(json.dumps(settings))
+
+    # Run only host.sh's settings conversion block, without AWS calls or Docker operations.
+    host = (Path(__file__).parents[1] / "deployment/host.sh").read_text()
+    conversion = host.split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
+    result = subprocess.run([sys.executable, "-", str(tmp_path), "research.duckdns.org", "model"],
+                            input=conversion, text=True, capture_output=True, check=True)
+    app_env = (tmp_path / "app.env").read_text()
+    proxy_env = (tmp_path / "proxy.env").read_text()
+    assert f"EXA_API_KEY={exa_key or ''}\n" in app_env
+    assert f"FRED_API_KEY={'a' * 32}\n" in app_env
+    assert "EXA_API_KEY" not in proxy_env and "FRED_API_KEY" not in proxy_env
+    assert not (tmp_path / "settings.json").exists()
+    assert result.stdout == result.stderr == ""
 
 
 def test_app_update_preserves_the_servers_existing_ami():

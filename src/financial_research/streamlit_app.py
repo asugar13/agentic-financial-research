@@ -188,7 +188,7 @@ def main() -> None:
         if not demo:
             st.caption(("Bedrock uses the server's AWS credentials. " if bedrock else "Ollama must be running locally. ") +
                        "Yahoo supplies prices; FRED macro requests need FRED_API_KEY. "
-                       "Live news is not connected.")
+                       "Web news requests need the news extra and EXA_API_KEY.")
 
     if submitted:
         try:
