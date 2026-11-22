@@ -344,7 +344,7 @@ real Treasury yield) is the initial example, not a whitelist.
 
 Set `FRED_API_KEY` in your environment using a
 [registered FRED API key](https://fred.stlouisfed.org/docs/api/api_key.html).
-The application does not load `.env` files. Run the tool independently:
+The FRED tool does not load `.env` files. Run the tool independently:
 
 ```sh
 .venv/bin/python -m financial_research.macro \
@@ -447,8 +447,8 @@ calling and structured outputs. This is the application's API model; it is
 configured independently of the model helping you write code in Codex.
 
 LLM mode makes billable API requests and uses the same real-data tools and
-required scope as local Ollama mode. No credentials or `.env` files are loaded or
-copied into run artifacts by application code.
+required scope as local Ollama mode. OpenAI credentials come from the process
+environment; credentials and `.env` file contents are excluded from run artifacts.
 
 The adapter uses a fresh, bounded state snapshot per request, rather than retaining
 an accumulating provider conversation. Normalized tool results are supplied in the

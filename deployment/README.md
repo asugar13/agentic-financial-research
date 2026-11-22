@@ -11,9 +11,10 @@ flowchart LR
     Server -->|Price requests| Yahoo["Yahoo Finance"]
     Server --> Disk["EBS disk: saved reports and state"]
     Server -->|Macro requests| FRED["FRED"]
+    Server -->|Web search| Exa["Exa: source URLs and highlights"]
 ```
 
-FRED uses the API key stored in the runtime SecureString.
+FRED and Exa use API keys stored in the runtime SecureString.
 
 Bedrock serves the existing Qwen model on demand; there is no dedicated model
 instance in this stack. The server's IAM role authorizes its model requests.
@@ -136,7 +137,9 @@ flowchart TD
     Result -.-> Manual["Manual: update DuckDNS if needed<br/>then check HTTPS, login, and research in your browser"]
 ```
 
-`configure()` prompts only when settings are missing or `--configure` is supplied.
+`configure()` prompts for the login and FRED key when settings are missing or
+`--configure` is supplied. `--configure-exa` prompts only for an Exa key when
+runtime settings already exist.
 The health check must pass before replacing the app. The script prints the public
 IP but does not update DuckDNS or perform the browser checks.
 
@@ -160,8 +163,8 @@ The Amazon Linux image includes SSM Agent, which the template starts during boot
 It connects outbound to Systems Manager over HTTPS and executes authorized Run
 Command requests on the server, so no inbound SSH connection is needed.
 `host.sh` reads the encrypted runtime settings from Parameter Store and passes
-`FRED_API_KEY` to the app container; the existing macro tool reads that environment
-variable when calling FRED. Configuring the key does not require changing Python code.
+`FRED_API_KEY` and `EXA_API_KEY` to the app container. The provider tools read those
+environment variables when making requests; the keys are not included in the image.
 
 The instance role has the standard `AmazonSSMManagedInstanceCore` administration
 permissions, plus access to the release prefix, runtime settings, and the selected
@@ -187,6 +190,16 @@ After merging a change, repeat the same deployment command from the new commit.
 Updates preserve the original AMI, so a routine app release does not replace the
 server. Operating-system/AMI upgrades need a separate reviewed maintenance change.
 Use `--configure` when intentionally replacing the shared login or FRED settings.
+
+To enable Exa, run the following once from a committed checkout:
+
+```bash
+.venv/bin/python deployment/deploy.py --domain your-chosen-name.duckdns.org --configure-exa
+```
+
+Enter the Exa key at the hidden prompt. This updates the existing runtime
+SecureString without replacing the login or FRED key, then deploys the app.
+Later releases reuse the saved key without `--configure-exa`.
 
 If a release fails, the script exits unsuccessfully and prints its SSM command ID.
 Inspect the result without SSH:

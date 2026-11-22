@@ -6,7 +6,7 @@ umask 077
 export AWS_DEFAULT_REGION=eu-north-1
 
 # deploy.py passes these three positional arguments through its SSM release command.
-# Full Parameter Store name of the runtime SecureString containing the login and FRED key.
+# Full Parameter Store name of the runtime SecureString containing the login and API keys.
 parameter=$1
 
 # Public hostname for Caddy, without https:// (e.g. agentic-financial-research.duckdns.org).
@@ -47,6 +47,7 @@ directory, domain, model = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 settings = json.loads((directory / "settings.json").read_text())
 username, password_hash = settings["username"], settings["password_hash"]
 fred_key = settings.get("fred_api_key", "")
+exa_key = settings.get("exa_api_key", "")
 
 # The proxy needs a safe username and a bcrypt hash, not a plaintext password.
 if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", username):
@@ -58,14 +59,15 @@ if fred_key and not re.fullmatch(r"[A-Fa-f0-9]{32}", fred_key):
     raise ValueError("Expected a 32-character FRED key.")
 
 # Reject line breaks/NULs that could corrupt Docker's environment-file format.
-for value in (domain, model):
+for value in (domain, model, exa_key):
     if any(character in value for character in "\r\n\x00"):
         raise ValueError("Invalid environment value.")
 
-# Keep the FRED key in the app environment and the login hash in the proxy environment.
+# Keep provider keys in the app environment and the login hash in the proxy environment.
 # RESEARCH_HOSTED=1 gives the UI Bedrock/demo options instead of offering local Ollama.
 (directory / "app.env").write_text(
-    f"AWS_REGION=eu-north-1\nBEDROCK_MODEL={model}\nRESEARCH_HOSTED=1\nFRED_API_KEY={fred_key}\n"
+    f"AWS_REGION=eu-north-1\nBEDROCK_MODEL={model}\nRESEARCH_HOSTED=1\n"
+    f"FRED_API_KEY={fred_key}\nEXA_API_KEY={exa_key}\n"
 )
 (directory / "proxy.env").write_text(
     f"APP_DOMAIN={domain}\nAPP_USERNAME={username}\nAPP_PASSWORD_HASH={password_hash}\n"
