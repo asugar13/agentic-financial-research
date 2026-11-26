@@ -59,7 +59,7 @@ def test_native_calls_and_review_run_through_graph_and_save_usage(tmp_path):
     assert len(state.tool_calls) == 1
     assert all(request["inferenceConfig"]["maxTokens"] == 4096 for request in requests)
     assert all(request["modelId"] == DEFAULT_MODEL for request in requests)
-    assert requests[1]["toolConfig"]["toolChoice"] == {"any": {}}
+    assert requests[1]["toolConfig"]["toolChoice"] == {"auto": {}}
     assert {tool["toolSpec"]["name"] for tool in requests[1]["toolConfig"]["tools"]} == {
         "get_market_prices", "get_macro_series", "search_news", "finish_research",
     }
@@ -102,24 +102,50 @@ def test_unsupported_schema_bounds_are_still_enforced_by_pydantic():
 
 
 @pytest.mark.parametrize("response", [
-    text_response({"message": "I would finish."}),
     tool_response("run_python", rationale="Unknown tool."),
     tool_response("get_market_prices", symbols=[], rationale="Invalid symbols."),
 ])
 def test_invalid_actions_fail_before_tool_execution(response):
-    model, _, _ = model_with_outputs([response])
+    model, requests, stub = model_with_outputs([response])
     with pytest.raises((ModelError, ValueError)):
         model.choose_action(ResearchState(question="Inspect prices."))
+    assert len(requests) == 1
+    stub.assert_no_pending_responses()
 
 
-def test_multiple_tool_calls_are_rejected():
+def multiple_tool_response():
     response = tool_response("finish_research", rationale="Done.")
     response["output"]["message"]["content"].append({"toolUse": {
         "toolUseId": "call_other", "name": "search_news", "input": {"query": "prices", "rationale": "Extra call."},
     }})
-    model, _, _ = model_with_outputs([response])
-    with pytest.raises(ModelError, match="exactly one"):
+    return response
+
+
+@pytest.mark.parametrize("response", [text_response({"message": "I would finish."}), multiple_tool_response()])
+def test_tool_count_errors_request_one_correction_before_selecting_an_action(response):
+    model, requests, stub = model_with_outputs([
+        response, tool_response("finish_research", rationale="No evidence is available."),
+    ])
+    state = ResearchState(question="Inspect prices.")
+    original = state.model_dump_json()
+    action = model.choose_action(state)
+    assert action.tool == "finish_research"
+    assert len(requests) == model.model_usage["requests"] == 2
+    assert model.model_usage["input_tokens"] == 200
+    assert all(request["toolConfig"]["toolChoice"] == {"auto": {}} for request in requests)
+    assert "None of those tools were executed" in requests[1]["system"][0]["text"]
+    assert requests[0]["messages"] == requests[1]["messages"]
+    assert state.model_dump_json() == original
+    stub.assert_no_pending_responses()
+
+
+@pytest.mark.parametrize("response", [text_response({"message": "I would finish."}), multiple_tool_response()])
+def test_tool_count_errors_stop_after_one_unsuccessful_correction(response):
+    model, requests, stub = model_with_outputs([response, response])
+    with pytest.raises(ModelError, match="after one correction; received"):
         model.choose_action(ResearchState(question="Inspect prices."))
+    assert len(requests) == model.model_usage["requests"] == 2
+    stub.assert_no_pending_responses()
 
 
 @pytest.mark.parametrize("stop", ["max_tokens", "guardrail_intervened", "content_filtered", "malformed_tool_use"])

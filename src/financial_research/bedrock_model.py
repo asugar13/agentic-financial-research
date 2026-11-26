@@ -108,18 +108,31 @@ class BedrockModel:
             "name": name, "description": description,
             "inputSchema": {"json": schema.model_json_schema()},
         }} for name, schema, description in tool_definitions(state)]
-        response = self._request(
-            state,
+        task = (
             "Assess remaining evidence gaps. Call exactly ONE tool, including finish_research to stop. "
+            "The graph runs tools sequentially: choose only the next action, even if the plan needs several tools. "
             "Do not return ordinary text or call multiple tools. "
             "Do not repeat an identical completed or failed call. "
-            "Stop if the configured source scope cannot answer the question.",
-            toolConfig={"tools": tools, "toolChoice": {"any": {}}},
+            "Stop if the configured source scope cannot answer the question."
         )
-        calls = [block["toolUse"] for block in response.get("output", {}).get("message", {}).get("content", [])
-                 if "toolUse" in block]
-        if response["stopReason"] != "tool_use" or len(calls) != 1:
-            raise ModelError("Expected exactly one Bedrock tool call.")
+        # Qwen can batch calls when tool choice is forced. Use automatic choice and
+        # allow one correction if it does not select a single next action.
+        for attempt in range(2):
+            response = self._request(state, task, toolConfig={"tools": tools, "toolChoice": {"auto": {}}})
+            calls = [block["toolUse"] for block in response.get("output", {}).get("message", {}).get("content", [])
+                     if "toolUse" in block]
+            if response["stopReason"] == "tool_use" and len(calls) == 1:
+                break
+            if attempt == 1:
+                raise ModelError(
+                    f"Expected exactly one Bedrock tool call after one correction; received {len(calls)} "
+                    f"with stop reason {response['stopReason']}."
+                )
+            task += (
+                f" Your previous response contained {len(calls)} tool calls with stop reason {response['stopReason']}. "
+                "None of those tools were executed. Return exactly ONE tool call for the next step; "
+                "wait for its result before requesting other tools."
+            )
         call = calls[0]
         if not isinstance(call.get("input"), dict):
             raise ModelError("Bedrock tool arguments must be a JSON object.")
