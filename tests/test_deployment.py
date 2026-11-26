@@ -35,7 +35,7 @@ def test_release_uses_committed_sources_and_excludes_notes_runs_and_credentials(
     git("init")
     for relative in (*deploy.RELEASE_PATHS, "docs/pass-1.md", ".aws/credentials", "runs/private/state.json"):
         path = tmp_path / relative
-        if relative in {"src", ".streamlit", "deployment"}:
+        if relative in {"src", "frontend", "deployment"}:
             path = path / "example.txt"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("example")
@@ -47,7 +47,7 @@ def test_release_uses_committed_sources_and_excludes_notes_runs_and_credentials(
     assert len(digest) == 64
     with tarfile.open(archive) as package:
         names = package.getnames()
-    assert "Dockerfile" in names and "src/example.txt" in names
+    assert "Dockerfile" in names and "src/example.txt" in names and "frontend/example.txt" in names
     assert not any(name.startswith(("docs/", ".aws/", "runs/", ".git/")) for name in names)
     (tmp_path / "Dockerfile").write_text("unreviewed edit")
     with pytest.raises(subprocess.CalledProcessError):

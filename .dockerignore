@@ -5,8 +5,11 @@
 !requirements.lock
 !src/
 !src/**
-!.streamlit/
-!.streamlit/config.toml
+!frontend/
+!frontend/**
+# The image installs and builds its own Linux copies of these.
+frontend/node_modules/
+frontend/dist/
 **/__pycache__/**
 **/*.py[cod]
 **/*.egg-info/**

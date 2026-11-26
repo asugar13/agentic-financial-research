@@ -71,14 +71,16 @@ jobs:
       - name: Build and smoke-test the app without AWS credentials
         run: |
           # Reproduce the restrictive archive permissions used on the server.
-          chmod -R go-rwx src .streamlit
+          chmod -R go-rwx src frontend
           docker build --build-arg APP_REVISION="$GITHUB_SHA" --tag financial-research:ci .
-          docker run --detach --name research-smoke --env RESEARCH_HOSTED=1 --publish 127.0.0.1:8501:8501 financial-research:ci
+          docker run --detach --name research-smoke --env RESEARCH_HOSTED=1 --publish 127.0.0.1:8000:8000 financial-research:ci
           for attempt in $(seq 1 30); do
             if [ "$(docker inspect --format '{{.State.Health.Status}}' research-smoke)" = healthy ]; then break; fi
             sleep 2
           done
           test "$(docker inspect --format '{{.State.Health.Status}}' research-smoke)" = healthy
-          curl --fail http://127.0.0.1:8501/_stcore/health
+          # The React page is served, and hosted mode offers only Bedrock and the demo.
+          curl --fail --silent http://127.0.0.1:8000/ | grep --quiet 'id="root"'
+          curl --fail --silent http://127.0.0.1:8000/api/config | grep --quiet '"modes":\["bedrock","demo"\]'
           docker exec research-smoke python -m financial_research --mode demo --output runs/container-smoke
           docker exec research-smoke sh -c 'test -s /app/runs/container-smoke/*/report.md'

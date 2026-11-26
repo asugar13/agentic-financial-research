@@ -1,12 +1,13 @@
-# Deploy the Streamlit app
+# Deploy the research desk
 
-This deployment runs Streamlit on one EC2 server in Stockholm (`eu-north-1`).
+This deployment runs the React research desk and its FastAPI backend on one EC2
+server in Stockholm (`eu-north-1`).
 Visitors use an HTTPS address and a shared app login. The server calls Bedrock
 using its instance role; visitors need neither AWS credentials nor Ollama.
 
 ```mermaid
 flowchart LR
-    Browser -->|HTTPS and login| Server["EC2 server: Caddy + Streamlit + Python"]
+    Browser -->|HTTPS and login| Server["EC2 server: Caddy + FastAPI + React"]
     Server -->|Model requests| Bedrock["Bedrock: Qwen3 32B"]
     Server -->|Price requests| Yahoo["Yahoo Finance"]
     Server --> Disk["EBS disk: saved reports and state"]
@@ -25,14 +26,14 @@ current `model_context()` summary; conversation context is supplied by our app.
 
 Review the files in this order:
 
-1. [`../Dockerfile`](../Dockerfile): the Python app image, running as a non-root user.
-2. [`Caddyfile`](Caddyfile): HTTPS, password authentication, and forwarding to Streamlit.
+1. [`../Dockerfile`](../Dockerfile): builds the React desk, then runs FastAPI as a non-root user.
+2. [`Caddyfile`](Caddyfile): HTTPS, password authentication, and forwarding to FastAPI.
 3. [`stack.yaml`](stack.yaml): network, server, instance permissions, and private release storage.
 4. [`deploy.py`](deploy.py): package a committed release, configure settings, and send it to the server.
 5. [`host.sh`](host.sh): build and health-check a candidate, then replace the running containers.
 
 The app, CLI, research graph, and saved-run format stay shared. `RESEARCH_HOSTED=1`
-defaults the UI to Bedrock and hides the local Ollama option. A build argument
+limits the desk to Bedrock and the offline demo, hiding local Ollama. A build argument
 records the release's Git revision in `run.json`, without putting `.git` in the image.
 
 ## Cost and scope
@@ -127,7 +128,7 @@ flowchart TD
         Boot["Wait for first-boot setup to finish"]
         Download["Download the archive from S3<br/>verify SHA-256, then extract the source"]
         Host["Run host.sh: read Parameter Store settings<br/>and build the app image"]
-        Health["Start the candidate container<br/>and check Streamlit health"]
+        Health["Start the candidate container<br/>and check that it serves the desk"]
         Replace["Replace the app and Caddy containers"]
         Boot --> Download --> Host --> Health --> Replace
     end
@@ -150,7 +151,7 @@ infrastructure rather than Terraform. The template defines the server, networkin
 permissions, and release bucket; runtime secrets are configured separately.
 
 Once that infrastructure exists, the application needs to be installed on EC2.
-`deploy.py` packages committed Python source, Dockerfile, dependencies, and config
+`deploy.py` packages committed Python and React source, Dockerfile, dependencies, and config
 into a `.tar.gz` archive. Personal notes, `.aws`, `.git`, and `runs` are excluded.
 S3 holds these release archives; saved research reports remain on the EC2 disk.
 
@@ -174,14 +175,14 @@ The Bedrock action was derived using IAM Policy Autopilot, then narrowed to
 `bedrock:InvokeModel` for the model actually used. No guardrails, bearer-token
 invocation, or built-in server tools are requested by this adapter.
 
-The security group exposes only HTTP/HTTPS. Streamlit's port 8501 is internal;
+The security group exposes only HTTP/HTTPS. The app's port 8000 is internal;
 SSH is closed. IMDSv2 supplies short-lived server credentials, including through
 the container network. No personal AWS login cache is copied into the image.
 
 The host keeps settings in root-readable files and run artifacts in
 `/var/lib/financial-research/runs`. The app container has a read-only filesystem
 except for run storage and temporary caches. Caddy's certificates persist separately.
-The candidate must pass Streamlit's health check before replacing the app. This
+The candidate must serve the React page before replacing the app. This
 check verifies startup; it does not prove that Bedrock or data providers are reachable.
 
 ## Updates, troubleshooting, and recovery
@@ -237,7 +238,7 @@ caches/images after checking which current and previous releases you want to kee
 
 The normal pytest suite tests packaging, password hashing, failed-release reporting,
 AMI preservation, and the hosted UI without calling AWS. CI also runs pinned
-`cfn-lint` and Guard checks, builds the image, checks its health endpoint, and runs
+`cfn-lint` and Guard checks, builds the image, checks the page and hosted provider list, and runs
 an offline research command inside it. `security.guard` contains four project rules;
 it is not a comprehensive compliance assessment.
 

@@ -22,7 +22,7 @@ REGION = "eu-north-1"
 # Package a committed whitelist, never the working directory or personal notes.
 RELEASE_PATHS = (
     "Dockerfile", ".dockerignore", "pyproject.toml", "requirements.lock",
-    "src", ".streamlit", "deployment",
+    "src", "frontend", "deployment",
 )
 
 

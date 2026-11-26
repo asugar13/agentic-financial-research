@@ -33,7 +33,8 @@ under `runs/<uuid>/`, open `http://127.0.0.1:8000/?run=<uuid>`.
 
 For frontend development, keep the API running and use
 `npm run dev --prefix frontend` in another terminal. Open the Vite URL it prints.
-Vite forwards `/api` requests to port 8000. The current hosted UI uses Streamlit.
+Vite forwards `/api` requests to port 8000. The [hosted deployment](deployment/README.md)
+serves this desk; Streamlit remains available locally.
 
 ## Open the Streamlit UI
 
