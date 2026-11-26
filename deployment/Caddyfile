@@ -2,5 +2,5 @@
     basic_auth {
         {$APP_USERNAME} {$APP_PASSWORD_HASH}
     }
-    reverse_proxy financial-research-app:8501
+    reverse_proxy financial-research-app:8000
 }

@@ -104,7 +104,7 @@ docker run -d --name financial-research-next --restart unless-stopped \
     --log-driver local --log-opt max-size=10m --log-opt max-file=3 \
     --volume "$state_dir/runs:/app/runs" "$image"
 
-# Wait for Streamlit to start before replacing the live app. This does not test data providers.
+# Wait for the API to serve the React page before replacing the live app. This does not test data providers.
 healthy=false
 for attempt in $(seq 1 45); do
     if [ "$(docker inspect --format '{{.State.Health.Status}}' financial-research-next)" = healthy ]; then
