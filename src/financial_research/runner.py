@@ -1,4 +1,4 @@
-"""Run research and save artifacts for both the CLI and the Streamlit interface."""
+"""Run research and save artifacts for the CLI and the React UI's API."""
 
 import time
 from collections.abc import Callable

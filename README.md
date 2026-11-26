@@ -9,7 +9,7 @@ supplies prices; FRED supplies macro data.
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
 `--mode demo` for the offline synthetic example. Exa supplies web news and company announcements when configured.
 
-## Open the React research desk locally
+## Open the React UI locally
 
 From the repository root, build the browser app and start the Python API:
 
@@ -25,50 +25,25 @@ a synthetic brief. Click an evidence ID in the findings to open its source.
 For a live brief, choose a starter and an available model provider. Local Ollama
 requires a running model; Bedrock uses the Python server's AWS credentials.
 
-The desk accepts one run at a time. The browser polls the saved snapshots in
+The UI accepts one run at a time. The browser polls the saved snapshots in
 `runs/react/<run-id>/`. Refreshing a run URL reopens its findings and sources.
 An API restart interrupts active work; completed runs remain readable.
-To revisit a completed Ollama, Bedrock, or demo run saved by the CLI or Streamlit
+To revisit a completed Ollama, Bedrock, or demo run saved by the CLI
 under `runs/<uuid>/`, open `http://127.0.0.1:8000/?run=<uuid>`.
-
-For frontend development, keep the API running and use
-`npm run dev --prefix frontend` in another terminal. Open the Vite URL it prints.
-Vite forwards `/api` requests to port 8000. The [hosted deployment](deployment/README.md)
-serves this desk; Streamlit remains available locally.
-
-## Open the Streamlit UI
-
-From the repository root, using the environment described in [Install and test](#install-and-test):
-
-```sh
-.venv/bin/python -m pip install -c requirements.lock -e '.[ui]'
-.venv/bin/streamlit run src/financial_research/streamlit_app.py --server.address 127.0.0.1
-```
-
-Open <http://localhost:8501>.
-Choose **Offline demo** for a first run without
-credentials or a model. **Local Ollama** is the default for real questions; start
-Ollama and install the model shown under **Research settings**. FRED requests use
-`FRED_API_KEY` from the server's environment, as in the CLI.
-
-Enter a question, symbols, and dates, then press **Run research**. Follow the
-progress, read the findings and sources, and inspect the price charts. The
-**Analysis** tab shows calculations only when the agent called `analyze_prices`.
-Review is off by default. Reports, state, and run diagnostics can be downloaded.
-[View the interface with a saved live run](docs/streamlit-ui.png).
 
 The UI and CLI call
 [run_saved_research()](https://github.com/asugar13/agentic-financial-research/blob/b9173d969fd2ddcca11047d27b578b99cb34ac88/src/financial_research/runner.py#L15)
-in `runner.py` to execute the graph and save its artifacts. Each submission gets a new folder
-under `runs/`. Changing a chart selection or downloading a file does not rerun
-research. The latest result stays in the browser session; refreshing the page
-clears that view, but the saved files remain on disk. Failed runs retain the same
-diagnostics and partial evidence as the CLI.
+in `runner.py` to execute the graph and save its artifacts. Failed runs keep their
+diagnostics and partial evidence.
 
-Choose **Amazon Bedrock** to use a hosted model while the interface runs locally.
+Choose **Amazon Bedrock** to use a hosted model while the API runs locally.
 Install the `bedrock` extra and configure AWS credentials as described below.
-For an HTTPS deployment with a shared login and server-side Bedrock access, see the
-[AWS deployment guide](deployment/README.md). Review its cost estimate before launching.
+The [AWS deployment guide](deployment/README.md) serves this same UI over HTTPS
+with a shared login and server-side Bedrock access. Review its cost estimate before launching.
+
+For frontend development, keep the API running and use
+`npm run dev --prefix frontend` in another terminal. Open the Vite URL it prints.
+Vite forwards `/api` requests to port 8000.
 
 ## Run the offline demonstration
 
@@ -218,7 +193,7 @@ strategy backtest.
 Install the optional Bedrock dependencies in the same `.venv` used to run the UI or CLI:
 
 ```sh
-.venv/bin/python -m pip install -c requirements.lock -e '.[ui,bedrock]'
+.venv/bin/python -m pip install -c requirements.lock -e '.[web,bedrock]'
 export AWS_PROFILE=financial-research
 export AWS_REGION=eu-north-1
 aws login --profile financial-research --region eu-north-1
@@ -237,11 +212,11 @@ The default model is Qwen3-32B (`qwen.qwen3-32b-v1:0`).
   --mode bedrock --symbols AAPL --start-date 2025-01-01 --end-date 2025-12-31
 ```
 
-Or start the UI from that terminal and select **Amazon Bedrock**.
+Or start the API server from that terminal and select **Amazon Bedrock** in the UI.
 
 `BEDROCK_MODEL` is an optional environment variable containing the default model
-ID for **both the CLI and Streamlit**. Override it with the CLI's `--model` option
-or Streamlit's **Bedrock model ID** field. Region comes from `AWS_REGION`, then
+ID for both the CLI and the UI. Override it with the CLI's `--model` option.
+Region comes from `AWS_REGION`, then
 `AWS_DEFAULT_REGION`, or defaults to this project's selected Region, Stockholm
 (`eu-north-1`).
 
@@ -495,7 +470,7 @@ dependencies. Tested locally with Python 3.14.3.
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,ui,bedrock]'
+.venv/bin/python -m pip install -c requirements.lock -e '.[dev,llm,web,bedrock]'
 .venv/bin/python -m pytest
 ```
 
@@ -504,9 +479,9 @@ commands so pip can resolve compatible dependency versions.
 
 For an offline-demo installation, use `'.[dev]'` instead. Runtime dependencies are
 LangGraph for orchestration, Pydantic for validation, and yfinance for real prices. Pytest
-is a development dependency; the OpenAI/AWS SDKs and Streamlit are optional dependencies.
-UI tests use [pytest.importorskip](https://github.com/asugar13/agentic-financial-research/blob/4038116bae0692e626c66c6485526a93ae138a2f/tests/test_streamlit_app.py#L15)
-to skip the test module when Streamlit is not installed; CI installs and runs them.
+is a development dependency; the OpenAI/AWS SDKs, FastAPI, and Exa are optional dependencies.
+API tests use [pytest.importorskip](tests/test_web.py#L8)
+to skip the test module when FastAPI is not installed; CI installs and runs them.
 `requirements.lock` records the exact tested dependency versions, including the optional extras.
 
 [GitHub Actions](.github/workflows/tests.yml) runs the deterministic tests and an
