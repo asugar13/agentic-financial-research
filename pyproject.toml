@@ -20,6 +20,7 @@ deploy = ["boto3[crt]>=1.43.124,<2", "bcrypt>=5,<6"]
 dev = ["pytest>=8,<10"]
 ui = ["streamlit>=1.66,<2"]
 news = ["exa-py>=2.29,<3"]
+web = ["fastapi>=0.115,<1", "uvicorn>=0.35,<1"]
 
 [project.scripts]
 financial-research = "financial_research.cli:main"

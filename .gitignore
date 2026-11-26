@@ -7,6 +7,7 @@ __pycache__/
 runs/
 build/
 dist/
+node_modules/
 
 # Personal learning walkthrough
 /docs/pass-1.md

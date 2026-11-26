@@ -9,6 +9,32 @@ supplies prices; FRED supplies macro data.
 dates; Yahoo supplies prices and FRED supplies macro data when requested. Use
 `--mode demo` for the offline synthetic example. Exa supplies web news and company announcements when configured.
 
+## Open the React research desk locally
+
+From the repository root, build the browser app and start the Python API:
+
+```sh
+.venv/bin/python -m pip install -e '.[web,news,bedrock]'
+npm ci --prefix frontend
+npm run build --prefix frontend
+.venv/bin/python -m uvicorn financial_research.web:app --port 8000
+```
+
+Open <http://127.0.0.1:8000>. Choose **Try the offline demo**, then **Run research** for
+a synthetic brief. Click an evidence ID in the findings to open its source.
+For a live brief, choose a starter and an available model provider. Local Ollama
+requires a running model; Bedrock uses the Python server's AWS credentials.
+
+The desk accepts one run at a time. The browser polls the saved snapshots in
+`runs/react/<run-id>/`. Refreshing a run URL reopens its findings and sources.
+An API restart interrupts active work; completed runs remain readable.
+To revisit a completed Ollama, Bedrock, or demo run saved by the CLI or Streamlit
+under `runs/<uuid>/`, open `http://127.0.0.1:8000/?run=<uuid>`.
+
+For frontend development, keep the API running and use
+`npm run dev --prefix frontend` in another terminal. Open the Vite URL it prints.
+Vite forwards `/api` requests to port 8000. The current hosted UI uses Streamlit.
+
 ## Open the Streamlit UI
 
 From the repository root, using the environment described in [Install and test](#install-and-test):
