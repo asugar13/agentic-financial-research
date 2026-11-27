@@ -62,3 +62,29 @@ export function moveLabel(row: Row): { text: string; tone: "up" | "down" | "flat
     tone: Math.abs(value) < 1 ? "flat" : value > 0 ? "up" : "down",
   };
 }
+
+// Fixed sample holdings for the demo. Values use live prices; these are not real positions.
+export const SAMPLE_SHARES: Record<string, number> = { NVDA: 30, AAPL: 10, TSLA: 8, BA: 13, PFE: 53 };
+
+export function money(value: number, currency: string | null, { sign = false, digits = 2 } = {}) {
+  let text: string;
+  try {
+    text = new Intl.NumberFormat("en-US", {
+      style: "currency", currency: currency || "USD", minimumFractionDigits: digits, maximumFractionDigits: digits,
+    }).format(Math.abs(value));
+  } catch {
+    // Yahoo uses some non-ISO codes (e.g. GBp for pence); fall back to plain numbers.
+    text = `${Math.abs(value).toFixed(digits)} ${currency ?? ""}`.trim();
+  }
+  if (!sign) return value < 0 ? "−" + text : text;
+  return (value > 0 ? "+" : value < 0 ? "−" : "") + text;
+}
+
+// What the position gained or lost over the event's reaction window.
+export function positionImpact(row: Row, prices: { date: string; close: number }[], shares: number): number | null {
+  const reaction = row.reaction;
+  const after = reaction ? prices.find((point) => point.date === reaction.to_date) : undefined;
+  if (!reaction || !after) return null;
+  const valueAfter = shares * after.close;
+  return valueAfter - valueAfter / (1 + reaction.stock_pct / 100);
+}

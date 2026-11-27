@@ -1,6 +1,6 @@
 import { useState, type PointerEvent } from "react";
 import type { PriceSeries } from "./api";
-import { formatDate, host, moveLabel, signed, type Row } from "./watchlist";
+import { formatDate, host, money, moveLabel, positionImpact, signed, type Row } from "./watchlist";
 
 const WIDTH = 320;
 const HEIGHT = 130;
@@ -9,10 +9,11 @@ const PAD = { top: 14, right: 10, bottom: 20, left: 10 };
 interface Props {
   series: PriceSeries;
   events: Row[];
+  shares?: number;
   onSelect: (row: Row) => void;
 }
 
-export function PriceChart({ series, events, onSelect }: Props) {
+export function PriceChart({ series, events, shares, onSelect }: Props) {
   const [active, setActive] = useState<Row | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const points = series.prices;
@@ -57,6 +58,7 @@ export function PriceChart({ series, events, onSelect }: Props) {
   const change = series.change_pct ?? 0;
   const last = points[points.length - 1];
   const point = hovered === null ? null : points[hovered];
+  const impact = active && shares ? positionImpact(active, points, shares) : null;
   return (
     <article className="chart-card">
       <header className="chart-card__header">
@@ -64,6 +66,7 @@ export function PriceChart({ series, events, onSelect }: Props) {
         <div className="chart-card__stats">
           <span className={`move move--${Math.abs(change) < 1 ? "flat" : change > 0 ? "up" : "down"}`}>{signed(change)}</span>
           <span>{last.close.toFixed(2)} {series.currency ?? ""}</span>
+          {shares && <span>{shares} shares · {money(shares * last.close, series.currency)}</span>}
         </div>
       </header>
       <svg className="chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" onPointerLeave={() => setHovered(null)}
@@ -94,6 +97,11 @@ export function PriceChart({ series, events, onSelect }: Props) {
             <span className={`category category--${active.category}`}>{active.category}</span>
             {formatDate(active.reported_date)} · {active.headline}{" "}
             <span className={`move move--${moveLabel(active).tone}`}>{moveLabel(active).text}</span>
+            {impact !== null && (
+              <span className={`move move--${Math.abs(impact) < 1 ? "flat" : impact > 0 ? "up" : "down"}`}>
+                {" "}· {money(impact, series.currency, { sign: true, digits: 0 })} on your position
+              </span>
+            )}
             {active.sources[0] && <span className="chart-caption__source"> · {host(active.sources[0].url)}</span>}
           </>
         ) : point ? (
