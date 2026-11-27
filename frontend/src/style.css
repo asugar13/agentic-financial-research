@@ -972,8 +972,15 @@ a {
   fill: #5b2fa3;
 }
 
+/* A fixed three-line caption: if hovering changed the card's height, the page
+   could shift under the cursor and make the hover flicker. */
 .chart-caption {
-  min-height: 3em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  height: calc(3 * 1.45em);
   margin: 0;
   font-size: 13px;
   line-height: 1.45;
