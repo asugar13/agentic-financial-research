@@ -80,7 +80,14 @@ export interface WatchlistScan {
   start_date: string;
   end_date: string;
   benchmark: string;
-  companies: { ticker: string; name: string | null; events: CompanyEvent[]; error: string | null }[];
+  companies: {
+    ticker: string;
+    name: string | null;
+    events: CompanyEvent[];
+    error: string | null;
+    scanned_at: string | null;
+    stale: boolean;
+  }[];
 }
 
 export interface PriceSeries {
@@ -90,6 +97,8 @@ export interface PriceSeries {
   prices: { date: string; close: number }[];
   change_pct: number | null;
   error: string | null;
+  fetched_at: string | null;
+  stale: boolean;
 }
 
 export interface WatchlistPrices {

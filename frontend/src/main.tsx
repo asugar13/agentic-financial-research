@@ -9,7 +9,7 @@ import { Radar } from "./Radar";
 import { ResearchForm } from "./ResearchForm";
 import { ResearchRun } from "./ResearchRun";
 import { WatchlistForm } from "./WatchlistForm";
-import { DEFAULT_WATCHLIST, eventRows, parseTickers, readStored, writeStored, type Row } from "./watchlist";
+import { DEFAULT_WATCHLIST, eventRows, formatTime, parseTickers, readStored, writeStored, type Row } from "./watchlist";
 import "./style.css";
 
 type View = "portfolio" | "radar" | "research";
@@ -105,10 +105,17 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   }, [view]);
 
   const rows = eventRows(scan?.data ?? null);
+  // When a live call fails, the API serves the last good copy; say so plainly.
+  const staleScans = (scan?.data.companies ?? []).filter((company) => company.stale)
+    .map((company) => `${company.ticker} (${company.scanned_at ? formatTime(company.scanned_at) : "earlier"})`);
+  const stalePrices = (prices?.data.series ?? []).filter((series) => series.stale)
+    .map((series) => `${series.ticker} (${series.fetched_at ? formatTime(series.fetched_at) : "earlier"})`);
   const notice = <>
     {loading === "prices" && <p className="radar-status" role="status">Loading prices…</p>}
     {loading === "scan" && <p className="radar-status" role="status">Searching recent news for {tickers.length} companies with Exa…</p>}
     {error && <p className="feedback feedback--error" role="alert">{error}</p>}
+    {staleScans.length > 0 && <p className="feedback feedback--notice">Live news search failed, so these show the most recent earlier scan: {staleScans.join(", ")}.</p>}
+    {stalePrices.length > 0 && <p className="feedback feedback--notice">Live prices were unavailable, so these show earlier prices: {stalePrices.join(", ")}.</p>}
   </>;
   const form = (onSubmit: () => void, actions: ReactNode) => (
     <WatchlistForm watchlist={watchlist} days={days} onWatchlist={setWatchlist} onDays={setDays} onSubmit={onSubmit}>

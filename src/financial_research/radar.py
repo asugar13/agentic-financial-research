@@ -6,7 +6,9 @@ import re
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Literal, TypeVar
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -19,6 +21,11 @@ Confidence = Literal["low", "medium", "high"]
 BENCHMARK = "SPY"
 # A small pool keeps a 15-name scan fast without bursting into Exa's rate limit.
 MAX_WORKERS = 5
+# One Exa scan per company per day serves every visitor; prices stay close to live.
+EVENTS_TTL = timedelta(hours=12)
+PRICES_TTL = timedelta(minutes=30)
+# Bump when cached shapes change so older files are ignored rather than misread.
+CACHE_VERSION = 1
 
 # Exa structured output: at most 10 properties in total and 2 levels of nesting.
 EVENT_SCHEMA: dict[str, Any] = {
@@ -44,6 +51,50 @@ EVENT_SCHEMA: dict[str, Any] = {
     },
     "required": ["events"],
 }
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+CachedModel = TypeVar("CachedModel", bound=Model)
+
+
+class ScanCache:
+    """One JSON file per company and lookback, shared by every visitor.
+
+    Fresh copies avoid repeat provider calls; older copies stand in when a live call fails.
+    """
+
+    def __init__(self, root: Path):
+        self.root = root / f"v{CACHE_VERSION}"
+
+    def _path(self, kind: str, ticker: str, days: int) -> Path:
+        # Tickers become file names, so accept only the characters a ticker can contain.
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
+            raise ValueError(f"Unsafe ticker for a cache file: {ticker!r}")
+        return self.root / kind / f"{ticker}-{days}d.json"
+
+    def read(self, kind: str, ticker: str, days: int, model: type[CachedModel]) -> CachedModel | None:
+        try:
+            return model.model_validate_json(self._path(kind, ticker, days).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def write(self, kind: str, ticker: str, days: int, value: Model) -> None:
+        try:
+            path = self._path(kind, ticker, days)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Write then rename, so a concurrent reader never sees half a file.
+            temporary = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+            temporary.write_text(value.model_dump_json(), encoding="utf-8")
+            temporary.replace(path)
+        except (OSError, ValueError):
+            logging.getLogger(__name__).warning("Could not cache %s for %s", kind, ticker)
+
+
+def _fresh(stamp: datetime | None, ttl: timedelta) -> bool:
+    return stamp is not None and _now() - stamp < ttl
 
 
 class MissingExaKey(RuntimeError):
@@ -82,6 +133,9 @@ class CompanyScan(Model):
     name: str | None = None
     events: list[CompanyEvent] = []
     error: str | None = None
+    scanned_at: datetime | None = None
+    # True when a live search failed and this is the most recent earlier scan.
+    stale: bool = False
 
 
 class WatchlistScan(Model):
@@ -103,6 +157,8 @@ class PriceSeries(Model):
     prices: list[PricePoint] = []
     change_pct: float | None = None
     error: str | None = None
+    fetched_at: datetime | None = None
+    stale: bool = False
 
 
 class WatchlistPrices(Model):
@@ -222,7 +278,9 @@ def _search(ticker: str, name: str | None, start: date, end: date, api_key: str)
     return response.output
 
 
-def scan_company(ticker: str, start: date, end: date, api_key: str, benchmark: dict[date, float] | None) -> CompanyScan:
+def _live_scan(ticker: str, start: date, end: date, api_key: str,
+               benchmark: dict[date, float] | None) -> tuple[CompanyScan, bool]:
+    """Search one company now; the flag says whether the result is complete enough to share."""
     # Ten extra calendar days give the first event in the window a previous close.
     history = _prices(ticker, start - timedelta(days=10), end)
     name = history.name if history else None
@@ -231,29 +289,44 @@ def scan_company(ticker: str, start: date, end: date, api_key: str, benchmark: d
     except Exception:
         # SDK errors can include response bodies; log them server-side and show a safe message.
         logging.getLogger(__name__).exception("Exa event search failed for %s", ticker)
-        return CompanyScan(ticker=ticker, name=name, error="Exa search failed; check the API key, credits, or rate limits.")
+        return CompanyScan(ticker=ticker, name=name, error="Exa search failed; check the API key, credits, or rate limits."), False
     if history:
         events = [
             event.model_copy(update={"reaction": price_reaction(event.reported_date, history.prices, benchmark)})
             for event in events
         ]
-    return CompanyScan(ticker=ticker, name=name, events=events)
+    # Without Yahoo data the events lack price moves, so don't share them for the whole day.
+    return CompanyScan(ticker=ticker, name=name, events=events, scanned_at=_now()), history is not None
 
 
-def scan_watchlist(tickers: Sequence[str], *, days: int = 30, today: date | None = None) -> WatchlistScan:
+def scan_watchlist(tickers: Sequence[str], *, days: int = 30, today: date | None = None,
+                   cache: ScanCache | None = None) -> WatchlistScan:
     """Scan each ticker independently so one failed company does not discard the others."""
     api_key = exa_api_key()
     if not api_key:
         raise MissingExaKey("Set EXA_API_KEY on the server before scanning.")
     end = today or date.today()
     start = end - timedelta(days=days)
-    benchmark = _prices(BENCHMARK, start - timedelta(days=10), end)
-    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(tickers))) as pool:
-        companies = list(pool.map(
-            lambda ticker: scan_company(ticker, start, end, api_key, benchmark.prices if benchmark else None),
-            tickers,
-        ))
-    return WatchlistScan(start_date=start, end_date=end, benchmark=BENCHMARK, companies=companies)
+    cached = {ticker: cache.read("events", ticker, days, CompanyScan) if cache else None for ticker in tickers}
+    companies = {ticker: scan for ticker, scan in cached.items() if scan and _fresh(scan.scanned_at, EVENTS_TTL)}
+    pending = [ticker for ticker in tickers if ticker not in companies]
+    if pending:
+        # The benchmark is only needed for live scans; a fully cached watchlist skips Yahoo entirely.
+        benchmark = _prices(BENCHMARK, start - timedelta(days=10), end)
+        closes = benchmark.prices if benchmark else None
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(pending))) as pool:
+            results = pool.map(lambda ticker: _live_scan(ticker, start, end, api_key, closes), pending)
+            for ticker, (scan, shareable) in zip(pending, results):
+                if scan.error is None:
+                    if shareable and cache:
+                        cache.write("events", ticker, days, scan)
+                    companies[ticker] = scan
+                elif cached[ticker]:
+                    companies[ticker] = cached[ticker].model_copy(update={"stale": True})
+                else:
+                    companies[ticker] = scan
+    return WatchlistScan(start_date=start, end_date=end, benchmark=BENCHMARK,
+                         companies=[companies[ticker] for ticker in tickers])
 
 
 def _series(ticker: str, start: date, end: date) -> PriceSeries:
@@ -262,15 +335,28 @@ def _series(ticker: str, start: date, end: date) -> PriceSeries:
     if len(points) < 2:
         return PriceSeries(ticker=ticker, error="Yahoo Finance returned no daily prices for this ticker.")
     return PriceSeries(
-        ticker=ticker, name=history.name, currency=history.currency, prices=points,
+        ticker=ticker, name=history.name, currency=history.currency, prices=points, fetched_at=_now(),
         change_pct=round((points[-1].close / points[0].close - 1) * 100, 2),
     )
 
 
-def price_history(tickers: Sequence[str], *, days: int = 30, today: date | None = None) -> WatchlistPrices:
+def price_history(tickers: Sequence[str], *, days: int = 30, today: date | None = None,
+                  cache: ScanCache | None = None) -> WatchlistPrices:
     """Daily closes for the chart; Yahoo only, so it needs no Exa key and costs nothing."""
     end = today or date.today()
     start = end - timedelta(days=days)
+
+    def one(ticker: str) -> PriceSeries:
+        cached = cache.read("prices", ticker, days, PriceSeries) if cache else None
+        if cached and _fresh(cached.fetched_at, PRICES_TTL):
+            return cached
+        live = _series(ticker, start, end)
+        if live.error is None:
+            if cache:
+                cache.write("prices", ticker, days, live)
+            return live
+        return cached.model_copy(update={"stale": True}) if cached else live
+
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(tickers))) as pool:
-        series = list(pool.map(lambda ticker: _series(ticker, start, end), tickers))
+        series = list(pool.map(one, tickers))
     return WatchlistPrices(start_date=start, end_date=end, series=series)

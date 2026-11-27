@@ -15,7 +15,9 @@ from pydantic import Field, field_validator
 
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
-from financial_research.radar import MissingExaKey, WatchlistPrices, WatchlistScan, price_history, scan_watchlist
+from financial_research.radar import (
+    MissingExaKey, ScanCache, WatchlistPrices, WatchlistScan, price_history, scan_watchlist,
+)
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.runner import run_saved_research
 
@@ -95,6 +97,8 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
     hosted = os.getenv("RESEARCH_HOSTED") == "1"
     modes = ["bedrock", "demo"] if hosted else ["ollama", "bedrock", "demo"]
     active: ResearchRunResponse | None = None
+    # Scans and prices live with the saved runs, so they survive restarts and deploys.
+    cache = ScanCache(runs / "cache")
 
     @app.get("/api/config")
     def config():
@@ -126,12 +130,12 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
 
     @app.post("/api/prices", response_model=WatchlistPrices)
     def prices(request: WatchlistRequest) -> WatchlistPrices:
-        return price_history(request.tickers, days=request.days)
+        return price_history(request.tickers, days=request.days, cache=cache)
 
     @app.post("/api/scan", response_model=WatchlistScan)
     def scan(request: WatchlistRequest) -> WatchlistScan:
         try:
-            return scan_watchlist(request.tickers, days=request.days)
+            return scan_watchlist(request.tickers, days=request.days, cache=cache)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
 
