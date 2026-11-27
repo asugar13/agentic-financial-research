@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { api, type Config, type WatchlistScan } from "./api";
-import { formatDate, host, isoDay, moveLabel, signed, type Row } from "./watchlist";
+import { formatDate, formatTime, host, isoDay, moveLabel, signed, type Row } from "./watchlist";
 
 function Detail({ row, onResearch, starting }: { row: Row; onResearch: () => void; starting: boolean }) {
   const reaction = row.reaction;
@@ -78,6 +78,8 @@ export function Radar({ config, form, notice, scan, rows, open, onOpen }: Props)
   }
 
   const failures = scan?.companies.filter((company) => company.error) ?? [];
+  // Cached scans show when they ran: one scan per company per day, shared by every visitor.
+  const scannedAt = (scan?.companies ?? []).map((company) => company.scanned_at).filter(Boolean).sort()[0];
 
   return (
     <>
@@ -95,7 +97,8 @@ export function Radar({ config, form, notice, scan, rows, open, onOpen }: Props)
         <section aria-label="Scan results">
           <p className="radar-summary">
             {rows.length} events across {scan.companies.length - failures.length} companies ·{" "}
-            {formatDate(scan.start_date)} – {formatDate(scan.end_date)} · Search by Exa · Prices by Yahoo Finance
+            {formatDate(scan.start_date)} – {formatDate(scan.end_date)}{scannedAt && ` · scanned ${formatTime(scannedAt)}`}
+            {" "}· Search by Exa · Prices by Yahoo Finance
           </p>
           {failures.map((company) => (
             <p className="feedback feedback--error" key={company.ticker}>{company.ticker}: {company.error}</p>

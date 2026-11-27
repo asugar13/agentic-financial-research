@@ -87,7 +87,8 @@ def test_failed_provider_setup_and_interrupted_runs_remain_readable(tmp_path, mo
 def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypatch):
     calls = []
 
-    def scan(tickers, *, days):
+    def scan(tickers, *, days, cache):
+        assert isinstance(cache, web.ScanCache)
         calls.append((tickers, days))
         if "NOKEY" in tickers:
             raise web.MissingExaKey("Set EXA_API_KEY on the server before scanning.")
@@ -105,7 +106,7 @@ def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypa
 
 def test_prices_endpoint_shares_watchlist_validation(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(web, "price_history", lambda tickers, *, days: calls.append((tickers, days)) or
+    monkeypatch.setattr(web, "price_history", lambda tickers, *, days, cache: calls.append((tickers, days)) or
                         web.WatchlistPrices(start_date="2026-10-28", end_date="2026-11-27", series=[]))
     with TestClient(web.create_app(tmp_path)) as client:
         assert client.post("/api/prices", json={"tickers": ["aapl"], "days": 90}).status_code == 200
