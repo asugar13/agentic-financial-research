@@ -101,3 +101,13 @@ def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypa
             assert client.post("/api/scan", json=invalid).status_code == 422
         missing = client.post("/api/scan", json={"tickers": ["NOKEY"]})
         assert missing.status_code == 503 and "EXA_API_KEY" in missing.json()["detail"]
+
+
+def test_prices_endpoint_shares_watchlist_validation(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(web, "price_history", lambda tickers, *, days: calls.append((tickers, days)) or
+                        web.WatchlistPrices(start_date="2026-10-28", end_date="2026-11-27", series=[]))
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/prices", json={"tickers": ["aapl"], "days": 90}).status_code == 200
+        assert calls == [(["AAPL"], 90)]
+        assert client.post("/api/prices", json={"tickers": ["NVDA; rm"]}).status_code == 422
