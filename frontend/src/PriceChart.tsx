@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type PointerEvent } from "react";
 import type { PriceSeries } from "./api";
 import { formatDate, host, moveLabel, signed, type Row } from "./watchlist";
 
@@ -14,6 +14,7 @@ interface Props {
 
 export function PriceChart({ series, events, onSelect }: Props) {
   const [active, setActive] = useState<Row | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
   const points = series.prices;
 
   if (series.error || points.length < 2) {
@@ -44,8 +45,18 @@ export function PriceChart({ series, events, onSelect }: Props) {
     return [{ row, cx: x(index), cy: Math.max(PAD.top - 6, y(points[index].close) - level * 11) }];
   });
 
+  // Map the pointer to the nearest trading day; dots sit above this layer, so they win.
+  function trace(event: PointerEvent<SVGRectElement>) {
+    const box = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
+    const position = ((event.clientX - box.left) / box.width) * WIDTH;
+    const index = Math.round(((position - PAD.left) / (WIDTH - PAD.left - PAD.right)) * (points.length - 1));
+    setHovered(Math.max(0, Math.min(points.length - 1, index)));
+    setActive(null);
+  }
+
   const change = series.change_pct ?? 0;
   const last = points[points.length - 1];
+  const point = hovered === null ? null : points[hovered];
   return (
     <article className="chart-card">
       <header className="chart-card__header">
@@ -55,16 +66,24 @@ export function PriceChart({ series, events, onSelect }: Props) {
           <span>{last.close.toFixed(2)} {series.currency ?? ""}</span>
         </div>
       </header>
-      <svg className="chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img"
+      <svg className="chart-svg" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" onPointerLeave={() => setHovered(null)}
         aria-label={`${series.ticker} closing prices from ${formatDate(points[0].date)} to ${formatDate(last.date)}`}>
         <path className="chart-area" d={area} />
         <path className="chart-line" d={line} />
         <text className="chart-axis" x={PAD.left} y={HEIGHT - 5}>{formatDate(points[0].date)}</text>
         <text className="chart-axis" x={WIDTH - PAD.right} y={HEIGHT - 5} textAnchor="end">{formatDate(last.date)}</text>
+        {point && hovered !== null && (
+          <g className="chart-hover" aria-hidden="true">
+            <line x1={x(hovered)} x2={x(hovered)} y1={PAD.top - 6} y2={HEIGHT - PAD.bottom} />
+            <circle cx={x(hovered)} cy={y(point.close)} r={3.5} />
+          </g>
+        )}
+        <rect className="chart-trace" x={0} y={0} width={WIDTH} height={HEIGHT - PAD.bottom}
+          onPointerMove={trace} onPointerDown={trace} />
         {dots.map(({ row, cx, cy }) => (
           <circle key={row.key} className={`dot dot--${row.category}${active?.key === row.key ? " dot--active" : ""}`}
             cx={cx} cy={cy} r={5} tabIndex={0} role="button" aria-label={`${formatDate(row.reported_date)}: ${row.headline}`}
-            onMouseEnter={() => setActive(row)} onFocus={() => setActive(row)}
+            onPointerEnter={() => { setActive(row); setHovered(null); }} onFocus={() => setActive(row)}
             onClick={() => onSelect(row)}
             onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(row); } }} />
         ))}
@@ -77,7 +96,13 @@ export function PriceChart({ series, events, onSelect }: Props) {
             <span className={`move move--${moveLabel(active).tone}`}>{moveLabel(active).text}</span>
             {active.sources[0] && <span className="chart-caption__source"> · {host(active.sources[0].url)}</span>}
           </>
-        ) : events.length ? `${events.length} events. Hover a dot to read it, click to open it in Event radar.` : ""}
+        ) : point ? (
+          <>
+            <strong>{formatDate(point.date)}</strong> · {point.close.toFixed(2)} {series.currency ?? ""} ·{" "}
+            {signed((point.close / points[0].close - 1) * 100)} since {formatDate(points[0].date)}
+          </>
+        ) : events.length ? `${events.length} events. Hover a dot to read it, click to open it in Event radar.`
+          : "Hover the chart to see each day's close."}
       </p>
     </article>
   );

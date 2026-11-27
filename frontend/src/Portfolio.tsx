@@ -16,9 +16,9 @@ export function Portfolio({ form, notice, prices, rows, explained, onSelect }: P
   return (
     <>
       <section className="page-intro radar-intro">
-        <h1 className="page-intro__title">Portfolio<span className="page-intro__accent">.</span></h1>
+        <h1 className="page-intro__title">Your portfolio<span className="page-intro__accent">.</span></h1>
         <p className="page-intro__description">
-          How your watchlist moved, and what moved it.
+          How your holdings moved, and what moved them.
         </p>
       </section>
       {form}

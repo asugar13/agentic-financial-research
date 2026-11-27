@@ -987,3 +987,25 @@ a {
 .chart-caption__source {
   color: var(--muted);
 }
+
+.chart-trace {
+  fill: transparent;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.chart-hover {
+  pointer-events: none;
+}
+
+.chart-hover line {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-hover circle {
+  fill: var(--navy);
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
