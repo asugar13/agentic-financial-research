@@ -54,3 +54,31 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return response.json();
 }
+
+export type EventCategory =
+  "earnings" | "guidance" | "legal" | "regulatory" | "management" | "deal" | "product" | "other";
+
+export interface CompanyEvent {
+  reported_date: string;
+  scheduled_date: string | null;
+  category: EventCategory;
+  headline: string;
+  why_it_matters: string;
+  confidence: "low" | "medium" | "high" | null;
+  sources: { title: string; url: string }[];
+  upcoming: boolean;
+  reaction: {
+    from_date: string;
+    to_date: string;
+    stock_pct: number;
+    benchmark_pct: number | null;
+    excess_pct: number | null;
+  } | null;
+}
+
+export interface WatchlistScan {
+  start_date: string;
+  end_date: string;
+  benchmark: string;
+  companies: { ticker: string; name: string | null; events: CompanyEvent[]; error: string | null }[];
+}
