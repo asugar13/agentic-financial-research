@@ -82,3 +82,18 @@ export interface WatchlistScan {
   benchmark: string;
   companies: { ticker: string; name: string | null; events: CompanyEvent[]; error: string | null }[];
 }
+
+export interface PriceSeries {
+  ticker: string;
+  name: string | null;
+  currency: string | null;
+  prices: { date: string; close: number }[];
+  change_pct: number | null;
+  error: string | null;
+}
+
+export interface WatchlistPrices {
+  start_date: string;
+  end_date: string;
+  series: PriceSeries[];
+}

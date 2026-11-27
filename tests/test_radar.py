@@ -126,3 +126,13 @@ def test_scan_requires_an_exa_key(monkeypatch, tmp_path):
     monkeypatch.delenv("EXA_API_KEY", raising=False)
     with pytest.raises(radar.MissingExaKey):
         radar.scan_watchlist(["ACME"])
+
+
+def test_price_history_needs_no_exa_key_and_reports_missing_tickers(services, monkeypatch):
+    monkeypatch.delenv("EXA_API_KEY")
+    acme, nope = radar.price_history(["ACME", "NOPE"], days=30, today=END).series
+    assert acme.name == "Acme Corp" and len(acme.prices) == 31
+    # The fake history rises by 1 a day from 100, so 30 days later it closes at 130.
+    assert acme.change_pct == 30.0 and acme.error is None
+    assert nope.prices == [] and nope.error
+    assert services == []

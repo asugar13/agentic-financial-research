@@ -844,3 +844,146 @@ a {
   gap: 16px;
   flex-wrap: wrap;
 }
+
+/* Portfolio */
+
+.site-header__nav a[aria-current="page"] {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+
+.button--secondary {
+  background: #ffffff;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.chart-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px 16px 12px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--accent);
+}
+
+.chart-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.chart-card__header span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart-card__stats {
+  text-align: right;
+}
+
+.chart-card__stats .move {
+  font-size: 15px;
+  color: inherit;
+}
+
+.chart-card__stats .move--up {
+  color: #0f7b45;
+}
+
+.chart-card__stats .move--down {
+  color: #b42318;
+}
+
+.chart-card__error {
+  margin: 0;
+  font-size: 13px;
+  color: #7a2824;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--navy);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.chart-area {
+  fill: var(--tint);
+  opacity: 0.7;
+}
+
+.chart-axis {
+  font: 10px var(--mono);
+  fill: var(--muted);
+}
+
+.dot {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  cursor: pointer;
+  fill: #6b7587;
+}
+
+.dot:hover,
+.dot:focus-visible,
+.dot--active {
+  r: 7;
+  outline: none;
+  stroke: var(--navy);
+}
+
+.dot--earnings,
+.dot--guidance {
+  fill: #1b3a9e;
+}
+
+.dot--legal,
+.dot--regulatory {
+  fill: #b42318;
+}
+
+.dot--deal {
+  fill: #1d6b3f;
+}
+
+.dot--management {
+  fill: #b07800;
+}
+
+.dot--product {
+  fill: #5b2fa3;
+}
+
+.chart-caption {
+  min-height: 3em;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.chart-caption .category {
+  margin-right: 6px;
+}
+
+.chart-caption__source {
+  color: var(--muted);
+}

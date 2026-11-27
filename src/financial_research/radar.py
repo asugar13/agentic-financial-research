@@ -91,6 +91,26 @@ class WatchlistScan(Model):
     companies: list[CompanyScan]
 
 
+class PricePoint(Model):
+    date: date
+    close: float
+
+
+class PriceSeries(Model):
+    ticker: str
+    name: str | None = None
+    currency: str | None = None
+    prices: list[PricePoint] = []
+    change_pct: float | None = None
+    error: str | None = None
+
+
+class WatchlistPrices(Model):
+    start_date: date
+    end_date: date
+    series: list[PriceSeries]
+
+
 def _get(item: Any, key: str) -> Any:
     # The SDK returns objects; tests and older SDK versions may return dictionaries.
     return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
@@ -234,3 +254,23 @@ def scan_watchlist(tickers: Sequence[str], *, days: int = 30, today: date | None
             tickers,
         ))
     return WatchlistScan(start_date=start, end_date=end, benchmark=BENCHMARK, companies=companies)
+
+
+def _series(ticker: str, start: date, end: date) -> PriceSeries:
+    history = _prices(ticker, start, end)
+    points = [PricePoint(date=day, close=round(close, 4)) for day, close in sorted(history.prices.items())] if history else []
+    if len(points) < 2:
+        return PriceSeries(ticker=ticker, error="Yahoo Finance returned no daily prices for this ticker.")
+    return PriceSeries(
+        ticker=ticker, name=history.name, currency=history.currency, prices=points,
+        change_pct=round((points[-1].close / points[0].close - 1) * 100, 2),
+    )
+
+
+def price_history(tickers: Sequence[str], *, days: int = 30, today: date | None = None) -> WatchlistPrices:
+    """Daily closes for the chart; Yahoo only, so it needs no Exa key and costs nothing."""
+    end = today or date.today()
+    start = end - timedelta(days=days)
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(tickers))) as pool:
+        series = list(pool.map(lambda ticker: _series(ticker, start, end), tickers))
+    return WatchlistPrices(start_date=start, end_date=end, series=series)

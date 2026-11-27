@@ -15,7 +15,7 @@ from pydantic import Field, field_validator
 
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
-from financial_research.radar import MissingExaKey, WatchlistScan, scan_watchlist
+from financial_research.radar import MissingExaKey, WatchlistPrices, WatchlistScan, price_history, scan_watchlist
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.runner import run_saved_research
 
@@ -55,7 +55,7 @@ class Source(Model):
         )
 
 
-class ScanRequest(Model):
+class WatchlistRequest(Model):
     tickers: list[str] = Field(min_length=1, max_length=15)
     days: int = Field(default=30, ge=1, le=90)
 
@@ -124,8 +124,12 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
         finally:
             active = None
 
+    @app.post("/api/prices", response_model=WatchlistPrices)
+    def prices(request: WatchlistRequest) -> WatchlistPrices:
+        return price_history(request.tickers, days=request.days)
+
     @app.post("/api/scan", response_model=WatchlistScan)
-    def scan(request: ScanRequest) -> WatchlistScan:
+    def scan(request: WatchlistRequest) -> WatchlistScan:
         try:
             return scan_watchlist(request.tickers, days=request.days)
         except MissingExaKey as exc:
