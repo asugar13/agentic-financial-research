@@ -6,6 +6,7 @@ import "@fontsource/instrument-serif/latin-400.css";
 import { api, type Config, type WatchlistPrices, type WatchlistScan } from "./api";
 import { Portfolio } from "./Portfolio";
 import { Radar } from "./Radar";
+import { DEFAULT_FILTERS, DEFAULT_SETTINGS, SearchSettingsPanel, settingsPayload, type Filters, type SettingsForm } from "./SearchSettings";
 import { ResearchForm } from "./ResearchForm";
 import { ResearchRun } from "./ResearchRun";
 import { WatchlistForm } from "./WatchlistForm";
@@ -55,6 +56,8 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   const [loading, setLoading] = useState<"prices" | "scan" | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [settings, setSettings] = useState(() => readStored<SettingsForm>(local, "radar-settings", DEFAULT_SETTINGS));
+  const [filters, setFilters] = useState(() => readStored<Filters>(local, "radar-filters", DEFAULT_FILTERS));
 
   const tickers = parseTickers(watchlist);
   const key = JSON.stringify({ tickers, days });
@@ -62,17 +65,19 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
 
   useEffect(() => writeStored(session, "radar-prices", prices), [prices]);
   useEffect(() => writeStored(session, "radar-scan", scan), [scan]);
+  useEffect(() => writeStored(local, "radar-settings", settings), [settings]);
+  useEffect(() => writeStored(local, "radar-filters", filters), [filters]);
 
-  async function post<T>(path: string): Promise<T> {
+  async function post<T>(path: string, body: unknown): Promise<T> {
     writeStored(local, "radar-watchlist", watchlist);
-    return api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: key });
+    return api<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   }
 
   async function loadPrices() {
     setLoading("prices");
     setError("");
     try {
-      setPrices({ key, data: await post<WatchlistPrices>("prices") });
+      setPrices({ key, data: await post<WatchlistPrices>("prices", { tickers, days }) });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Prices could not be loaded.");
     } finally {
@@ -86,8 +91,8 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
     try {
       // Refresh the charts too if the watchlist changed, so dots land on matching lines.
       const [scanned, charted] = await Promise.all([
-        post<WatchlistScan>("scan"),
-        prices?.key === key ? Promise.resolve(prices.data) : post<WatchlistPrices>("prices"),
+        post<WatchlistScan>("scan", { tickers, days, settings: settingsPayload(settings) }),
+        prices?.key === key ? Promise.resolve(prices.data) : post<WatchlistPrices>("prices", { tickers, days }),
       ]);
       setScan({ key, data: scanned });
       setPrices({ key, data: charted });
@@ -104,7 +109,10 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
     if (view === "portfolio" && !prices && valid) void loadPrices();
   }, [view]);
 
-  const rows = eventRows(scan?.data ?? null);
+  // Event-type and confidence filters only change what is shown, never the search.
+  const filtered = filters.hidden.length > 0 || filters.highOnly;
+  const rows = eventRows(scan?.data ?? null).filter((row) =>
+    !filters.hidden.includes(row.category) && (!filters.highOnly || row.confidence === "high"));
   // When a live call fails, the API serves the last good copy; say so plainly.
   const staleScans = (scan?.data.companies ?? []).filter((company) => company.stale)
     .map((company) => `${company.ticker} (${company.scanned_at ? formatTime(company.scanned_at) : "earlier"})`);
@@ -118,7 +126,8 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
     {stalePrices.length > 0 && <p className="feedback feedback--notice">Live prices were unavailable, so these show earlier prices: {stalePrices.join(", ")}.</p>}
   </>;
   const form = (onSubmit: () => void, actions: ReactNode) => (
-    <WatchlistForm watchlist={watchlist} days={days} onWatchlist={setWatchlist} onDays={setDays} onSubmit={onSubmit}>
+    <WatchlistForm watchlist={watchlist} days={days} onWatchlist={setWatchlist} onDays={setDays} onSubmit={onSubmit}
+      extra={<SearchSettingsPanel settings={settings} filters={filters} onSettings={setSettings} onFilters={setFilters} />}>
       {actions}
     </WatchlistForm>
   );
@@ -127,7 +136,7 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   let content: ReactNode;
   if (view === "research") content = <ResearchForm config={config} />;
   else if (view === "radar") {
-    content = <Radar config={config} scan={scan?.data ?? null} rows={rows} open={open} onOpen={setOpen} notice={notice}
+    content = <Radar config={config} scan={scan?.data ?? null} rows={rows} filtered={filtered} open={open} onOpen={setOpen} notice={notice}
       form={form(runScan, <button className="button button--primary" disabled={busy}>{loading === "scan" ? "Scanning…" : "Scan"}</button>)} />;
   } else {
     content = <Portfolio prices={prices?.data ?? null} rows={scan && scan.key === prices?.key ? rows : []}

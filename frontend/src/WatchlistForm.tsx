@@ -8,10 +8,11 @@ interface Props {
   onDays: (value: number) => void;
   onSubmit: () => void;
   children: ReactNode;
+  extra?: ReactNode;
 }
 
 // Shared by Portfolio and Event radar so both tabs always work on the same list.
-export function WatchlistForm({ watchlist, days, onWatchlist, onDays, onSubmit, children }: Props) {
+export function WatchlistForm({ watchlist, days, onWatchlist, onDays, onSubmit, children, extra }: Props) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit();
@@ -31,6 +32,8 @@ export function WatchlistForm({ watchlist, days, onWatchlist, onDays, onSubmit, 
         {children}
       </form>
       <p className="radar-hint" id="watchlist-hint">Up to 15 stock tickers, separated by commas, e.g. NVDA, BRK-B, SAP.DE.</p>
+      {/* Outside the form, so Enter in a setting never triggers the form's button. */}
+      {extra}
     </>
   );
 }

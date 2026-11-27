@@ -76,10 +76,19 @@ export interface CompanyEvent {
   } | null;
 }
 
+export interface SearchSettings {
+  focus: string;
+  include_domains: string[];
+  exclude_domains: string[];
+  num_results: 10 | 25;
+}
+
 export interface WatchlistScan {
   start_date: string;
   end_date: string;
   benchmark: string;
+  // Missing on scans saved by older versions of the page.
+  settings?: SearchSettings;
   companies: {
     ticker: string;
     name: string | null;
