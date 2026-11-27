@@ -1,6 +1,6 @@
-# Deploy the research desk
+# Deploy the React UI
 
-This deployment runs the React research desk and its FastAPI backend on one EC2
+This deployment runs the React UI and its FastAPI backend on one EC2
 server in Stockholm (`eu-north-1`).
 Visitors use an HTTPS address and a shared app login. The server calls Bedrock
 using its instance role; visitors need neither AWS credentials nor Ollama.
@@ -26,14 +26,14 @@ current `model_context()` summary; conversation context is supplied by our app.
 
 Review the files in this order:
 
-1. [`../Dockerfile`](../Dockerfile): builds the React desk, then runs FastAPI as a non-root user.
+1. [`../Dockerfile`](../Dockerfile): builds the React UI, then runs FastAPI as a non-root user.
 2. [`Caddyfile`](Caddyfile): HTTPS, password authentication, and forwarding to FastAPI.
 3. [`stack.yaml`](stack.yaml): network, server, instance permissions, and private release storage.
 4. [`deploy.py`](deploy.py): package a committed release, configure settings, and send it to the server.
 5. [`host.sh`](host.sh): build and health-check a candidate, then replace the running containers.
 
 The app, CLI, research graph, and saved-run format stay shared. `RESEARCH_HOSTED=1`
-limits the desk to Bedrock and the offline demo, hiding local Ollama. A build argument
+limits the UI to Bedrock and the offline demo, hiding local Ollama. A build argument
 records the release's Git revision in `run.json`, without putting `.git` in the image.
 
 ## Cost and scope
@@ -128,7 +128,7 @@ flowchart TD
         Boot["Wait for first-boot setup to finish"]
         Download["Download the archive from S3<br/>verify SHA-256, then extract the source"]
         Host["Run host.sh: read Parameter Store settings<br/>and build the app image"]
-        Health["Start the candidate container<br/>and check that it serves the desk"]
+        Health["Start the candidate container<br/>and check that it serves the UI"]
         Replace["Replace the app and Caddy containers"]
         Boot --> Download --> Host --> Health --> Replace
     end
@@ -243,12 +243,11 @@ an offline research command inside it. `security.guard` contains four project ru
 it is not a comprehensive compliance assessment.
 
 Local ARM64 checks also verified HTTPS using Caddy's localhost certificate, missing
-and wrong passwords returning 401, an authenticated Streamlit WebSocket handshake,
-and saved demo files surviving a container restart. AWS's read-only `ValidateTemplate`
+and wrong passwords returning 401, and saved demo files surviving a container restart. AWS's read-only `ValidateTemplate`
 accepted the template; this does not verify provisioning permissions or live connectivity.
 
 The live preview was verified on 2026-11-08: public HTTPS and password protection,
-authenticated WebSocket access, offline research, real Bedrock/Yahoo and
+offline research, real Bedrock/Yahoo and
 Bedrock/FRED research runs through the EC2 role, and run artifacts on the host's
 persistent storage. The FRED run collected 249 DFII10 observations for 2025 and
 saved a cited report. The FRED key was added to the existing runtime SecureString

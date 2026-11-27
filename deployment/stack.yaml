@@ -146,7 +146,7 @@ Resources:
   WebAccess:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Public HTTPS app and HTTP certificate validation; no SSH or direct Streamlit access.
+      GroupDescription: Public HTTPS app and HTTP certificate validation; no SSH, app reachable only through Caddy.
       VpcId: !Ref Network
       SecurityGroupIngress:
         # Public web access is intentional. Caddy redirects HTTP to HTTPS and authenticates all app requests.

@@ -1,4 +1,4 @@
-# Stage 1 builds the React desk. Only its compiled files reach the final image.
+# Stage 1 builds the React UI. Only its compiled files reach the final image.
 FROM node:22-slim AS frontend
 WORKDIR /frontend
 # Install from the lockfile before copying sources so edits reuse the cached dependencies.

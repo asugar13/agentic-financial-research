@@ -28,7 +28,7 @@ def test_demo_run_returns_report_with_sources_and_survives_restart(tmp_path):
         assert restarted.get(path).json() == run
     assert len(list((tmp_path / "react").iterdir())) == 1
 
-    # An existing CLI or Streamlit run has the same artifacts in the parent folder.
+    # A CLI run has the same artifacts in the parent folder.
     directory = tmp_path / "react" / UUID(run["id"]).hex
     directory.rename(tmp_path / directory.name)
     with TestClient(web.create_app(tmp_path)) as client:

@@ -1,4 +1,4 @@
-"""HTTP entry point for the React research desk. Run with one Uvicorn worker."""
+"""HTTP entry point for the React UI. Run with one Uvicorn worker."""
 
 import json
 import logging
@@ -137,7 +137,7 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
         except FileNotFoundError:
             if starting and starting.id == run_id:
                 return starting
-            # The CLI and Streamlit save sibling UUID folders. A completed brief
+            # The CLI saves sibling UUID folders. A completed brief
             # can be opened by link without replaying its model or data requests.
             output = runs / run_id.hex
             try:
