@@ -19,7 +19,7 @@ export function WatchlistForm({ watchlist, days, onWatchlist, onDays, onSubmit, 
   return (
     <>
       <form className="radar-form" onSubmit={submit}>
-        <label className="form-field radar-form__tickers">Watchlist
+        <label className="form-field radar-form__tickers">Holdings
           <input className="form-field__input" value={watchlist} onChange={(event) => onWatchlist(event.target.value)}
             placeholder="NVDA, AAPL, TSLA" aria-describedby="watchlist-hint" />
         </label>
