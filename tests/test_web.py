@@ -87,7 +87,7 @@ def test_failed_provider_setup_and_interrupted_runs_remain_readable(tmp_path, mo
 def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypatch):
     calls = []
 
-    def scan(tickers, *, days, cache):
+    def scan(tickers, *, days, cache, settings):
         assert isinstance(cache, web.ScanCache)
         calls.append((tickers, days))
         if "NOKEY" in tickers:
@@ -112,3 +112,18 @@ def test_prices_endpoint_shares_watchlist_validation(tmp_path, monkeypatch):
         assert client.post("/api/prices", json={"tickers": ["aapl"], "days": 90}).status_code == 200
         assert calls == [(["AAPL"], 90)]
         assert client.post("/api/prices", json={"tickers": ["NVDA; rm"]}).status_code == 422
+
+
+def test_scan_forwards_validated_search_settings(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(web, "scan_watchlist", lambda tickers, *, days, cache, settings: seen.append(settings) or
+                        web.WatchlistScan(start_date="2026-10-28", end_date="2026-11-27", benchmark="SPY", companies=[]))
+    with TestClient(web.create_app(tmp_path)) as client:
+        body = {"tickers": ["NVDA"], "settings": {"focus": "AI chips", "include_domains": ["https://Reuters.com/"],
+                                                  "num_results": 25}}
+        assert client.post("/api/scan", json=body).status_code == 200
+        assert seen[0].include_domains == ["reuters.com"] and seen[0].num_results == 25
+        for settings in ({"num_results": 15}, {"exclude_domains": ["not a domain"]}, {"focus": "x" * 201}):
+            assert client.post("/api/scan", json={"tickers": ["NVDA"], "settings": settings}).status_code == 422
+        # Prices ignore search settings, so sending them is a client error.
+        assert client.post("/api/prices", json=body).status_code == 422

@@ -1016,3 +1016,72 @@ a {
   stroke: #ffffff;
   stroke-width: 1.5;
 }
+
+/* Search settings */
+
+.search-settings {
+  margin: 4px 0 16px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.search-settings summary {
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334159;
+}
+
+.search-settings__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 20px;
+  padding: 4px 14px 16px;
+}
+
+.search-settings__group {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.search-settings__group legend {
+  margin-bottom: 8px;
+  font: 11px/1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.search-settings__group .radar-hint {
+  margin: 0;
+}
+
+.search-settings__group .button {
+  justify-self: start;
+}
+
+.search-settings__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-settings__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.search-settings__chip .category {
+  margin-right: 0;
+}
+
+.search-settings__chip input:not(:checked) + .category {
+  opacity: 0.4;
+  text-decoration: line-through;
+}

@@ -1,5 +1,6 @@
 """Scan a watchlist for material company events with Exa, then measure each event's price reaction."""
 
+import hashlib
 import json
 import logging
 import re
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from financial_research.models import HistoricalPriceRequest, Model
 from financial_research.news import exa_api_key
@@ -69,21 +70,22 @@ class ScanCache:
     def __init__(self, root: Path):
         self.root = root / f"v{CACHE_VERSION}"
 
-    def _path(self, kind: str, ticker: str, days: int) -> Path:
+    def _path(self, kind: str, ticker: str, days: int, variant: str = "") -> Path:
         # Tickers become file names, so accept only the characters a ticker can contain.
-        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
-            raise ValueError(f"Unsafe ticker for a cache file: {ticker!r}")
-        return self.root / kind / f"{ticker}-{days}d.json"
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker) or not re.fullmatch(r"[0-9a-f]*", variant):
+            raise ValueError(f"Unsafe cache file name for {ticker!r}")
+        suffix = f"-{variant}" if variant else ""
+        return self.root / kind / f"{ticker}-{days}d{suffix}.json"
 
-    def read(self, kind: str, ticker: str, days: int, model: type[CachedModel]) -> CachedModel | None:
+    def read(self, kind: str, ticker: str, days: int, model: type[CachedModel], variant: str = "") -> CachedModel | None:
         try:
-            return model.model_validate_json(self._path(kind, ticker, days).read_text(encoding="utf-8"))
+            return model.model_validate_json(self._path(kind, ticker, days, variant).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
-    def write(self, kind: str, ticker: str, days: int, value: Model) -> None:
+    def write(self, kind: str, ticker: str, days: int, value: Model, variant: str = "") -> None:
         try:
-            path = self._path(kind, ticker, days)
+            path = self._path(kind, ticker, days, variant)
             path.parent.mkdir(parents=True, exist_ok=True)
             # Write then rename, so a concurrent reader never sees half a file.
             temporary = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
@@ -95,6 +97,35 @@ class ScanCache:
 
 def _fresh(stamp: datetime | None, ttl: timedelta) -> bool:
     return stamp is not None and _now() - stamp < ttl
+
+
+class SearchSettings(Model):
+    """Exa controls a broker can tune; the defaults reproduce the standard scan."""
+
+    include_domains: list[str] = Field(default_factory=list, max_length=20)
+    exclude_domains: list[str] = Field(default_factory=list, max_length=20)
+    focus: str = Field(default="", max_length=200)
+    num_results: Literal[10, 25] = 10
+
+    @field_validator("include_domains", "exclude_domains")
+    @classmethod
+    def clean_domains(cls, domains: list[str]) -> list[str]:
+        cleaned = []
+        for domain in domains:
+            domain = domain.strip().lower().removeprefix("https://").removeprefix("http://").rstrip("/")
+            if not domain:
+                continue
+            # Exa accepts a host, a wildcard subdomain, or a host with a path prefix.
+            if not re.fullmatch(r"(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(/[\w./-]*)?", domain):
+                raise ValueError(f"Enter sources as domains such as reuters.com, not {domain!r}.")
+            cleaned.append(domain)
+        return list(dict.fromkeys(cleaned))
+
+    def cache_variant(self) -> str:
+        """Default settings keep the original cache files; anything else gets its own copy."""
+        if self == SearchSettings():
+            return ""
+        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()[:12]
 
 
 class MissingExaKey(RuntimeError):
@@ -143,6 +174,7 @@ class WatchlistScan(Model):
     end_date: date
     benchmark: str
     companies: list[CompanyScan]
+    settings: SearchSettings = SearchSettings()
 
 
 class PricePoint(Model):
@@ -264,28 +296,34 @@ def _prices(symbol: str, start: date, end: date) -> _DailyResponse | None:
         return None
 
 
-def _search(ticker: str, name: str | None, start: date, end: date, api_key: str) -> Any:
+def _search(ticker: str, name: str | None, start: date, end: date, api_key: str,
+            settings: SearchSettings) -> Any:
     from exa_py import Exa
 
     company = f"{name} ({ticker})" if name else f"{ticker} stock"
     query = (f"{company} material company news: earnings, guidance, lawsuits, regulatory actions, "
              "executive changes, deals, product launches")
+    if settings.focus:
+        query += f". Focus on: {settings.focus}"
+    # Empty domain lists are omitted so the default request is unchanged.
+    domains = {key: value for key, value in (("include_domains", settings.include_domains),
+                                            ("exclude_domains", settings.exclude_domains)) if value}
     response = Exa(api_key=api_key, timeout=60).search(
-        query, type="auto", category="news", num_results=10, output_schema=EVENT_SCHEMA,
+        query, type="auto", category="news", num_results=settings.num_results, output_schema=EVENT_SCHEMA, **domains,
         start_published_date=datetime.combine(start, time.min, timezone.utc).isoformat(),
         end_published_date=datetime.combine(end + timedelta(days=1), time.min, timezone.utc).isoformat(),
     )
     return response.output
 
 
-def _live_scan(ticker: str, start: date, end: date, api_key: str,
-               benchmark: dict[date, float] | None) -> tuple[CompanyScan, bool]:
+def _live_scan(ticker: str, start: date, end: date, api_key: str, benchmark: dict[date, float] | None,
+               settings: SearchSettings) -> tuple[CompanyScan, bool]:
     """Search one company now; the flag says whether the result is complete enough to share."""
     # Ten extra calendar days give the first event in the window a previous close.
     history = _prices(ticker, start - timedelta(days=10), end)
     name = history.name if history else None
     try:
-        events = parse_events(_search(ticker, name, start, end, api_key), start=start, end=end)
+        events = parse_events(_search(ticker, name, start, end, api_key, settings), start=start, end=end)
     except Exception:
         # SDK errors can include response bodies; log them server-side and show a safe message.
         logging.getLogger(__name__).exception("Exa event search failed for %s", ticker)
@@ -300,14 +338,17 @@ def _live_scan(ticker: str, start: date, end: date, api_key: str,
 
 
 def scan_watchlist(tickers: Sequence[str], *, days: int = 30, today: date | None = None,
-                   cache: ScanCache | None = None) -> WatchlistScan:
+                   cache: ScanCache | None = None, settings: SearchSettings | None = None) -> WatchlistScan:
     """Scan each ticker independently so one failed company does not discard the others."""
+    settings = settings or SearchSettings()
+    # Different settings give different results, so each combination is cached separately.
+    variant = settings.cache_variant()
     api_key = exa_api_key()
     if not api_key:
         raise MissingExaKey("Set EXA_API_KEY on the server before scanning.")
     end = today or date.today()
     start = end - timedelta(days=days)
-    cached = {ticker: cache.read("events", ticker, days, CompanyScan) if cache else None for ticker in tickers}
+    cached = {ticker: cache.read("events", ticker, days, CompanyScan, variant) if cache else None for ticker in tickers}
     companies = {ticker: scan for ticker, scan in cached.items() if scan and _fresh(scan.scanned_at, EVENTS_TTL)}
     pending = [ticker for ticker in tickers if ticker not in companies]
     if pending:
@@ -315,17 +356,17 @@ def scan_watchlist(tickers: Sequence[str], *, days: int = 30, today: date | None
         benchmark = _prices(BENCHMARK, start - timedelta(days=10), end)
         closes = benchmark.prices if benchmark else None
         with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(pending))) as pool:
-            results = pool.map(lambda ticker: _live_scan(ticker, start, end, api_key, closes), pending)
+            results = pool.map(lambda ticker: _live_scan(ticker, start, end, api_key, closes, settings), pending)
             for ticker, (scan, shareable) in zip(pending, results):
                 if scan.error is None:
                     if shareable and cache:
-                        cache.write("events", ticker, days, scan)
+                        cache.write("events", ticker, days, scan, variant)
                     companies[ticker] = scan
                 elif cached[ticker]:
                     companies[ticker] = cached[ticker].model_copy(update={"stale": True})
                 else:
                     companies[ticker] = scan
-    return WatchlistScan(start_date=start, end_date=end, benchmark=BENCHMARK,
+    return WatchlistScan(start_date=start, end_date=end, benchmark=BENCHMARK, settings=settings,
                          companies=[companies[ticker] for ticker in tickers])
 
 

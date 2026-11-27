@@ -200,3 +200,30 @@ def test_unsafe_tickers_never_become_cache_paths(tmp_path):
     cache.write("events", "../escape", 30, radar.CompanyScan(ticker="X"))
     assert cache.read("events", "../escape", 30, radar.CompanyScan) is None
     assert not any(tmp_path.parent.glob("escape*"))
+
+
+def test_search_settings_reach_exa_and_defaults_leave_the_request_unchanged(services):
+    radar.scan_watchlist(["ACME"], today=END)
+    _, default = services[-1]
+    assert default["num_results"] == 10 and "include_domains" not in default and "exclude_domains" not in default
+    settings = radar.SearchSettings(focus="AI chips", include_domains=["reuters.com"], exclude_domains=["fool.com"],
+                                    num_results=25)
+    scan = radar.scan_watchlist(["ACME"], today=END, settings=settings)
+    query, options = services[-1]
+    assert query.endswith("Focus on: AI chips")
+    assert options["include_domains"] == ["reuters.com"] and options["exclude_domains"] == ["fool.com"]
+    assert options["num_results"] == 25 and scan.settings == settings
+
+
+def test_each_settings_combination_has_its_own_cache_copy(services, clock, tmp_path):
+    cache = radar.ScanCache(tmp_path)
+    radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    searches = len(services)
+    focused = radar.SearchSettings(focus="AI chips")
+    radar.scan_watchlist(["ACME"], today=END, cache=cache, settings=focused)
+    assert len(services) == searches + 1
+    radar.scan_watchlist(["ACME"], today=END, cache=cache, settings=focused)
+    radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    assert len(services) == searches + 1
+    files = sorted(path.name for path in (tmp_path / f"v{radar.CACHE_VERSION}" / "events").iterdir())
+    assert files == ["ACME-30d-" + focused.cache_variant() + ".json", "ACME-30d.json"]

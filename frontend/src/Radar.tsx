@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { api, type Config, type WatchlistScan } from "./api";
+import { describeSettings } from "./SearchSettings";
 import { formatDate, formatTime, host, isoDay, moveLabel, signed, type Row } from "./watchlist";
 
 function Detail({ row, onResearch, starting }: { row: Row; onResearch: () => void; starting: boolean }) {
@@ -39,11 +40,12 @@ interface Props {
   notice: ReactNode;
   scan: WatchlistScan | null;
   rows: Row[];
+  filtered: boolean;
   open: string | null;
   onOpen: (key: string | null) => void;
 }
 
-export function Radar({ config, form, notice, scan, rows, open, onOpen }: Props) {
+export function Radar({ config, form, notice, scan, rows, filtered, open, onOpen }: Props) {
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -96,10 +98,11 @@ export function Radar({ config, form, notice, scan, rows, open, onOpen }: Props)
       {scan && (
         <section aria-label="Scan results">
           <p className="radar-summary">
-            {rows.length} events across {scan.companies.length - failures.length} companies ·{" "}
+            {rows.length} events{filtered ? " shown (filters on)" : ""} across {scan.companies.length - failures.length} companies ·{" "}
             {formatDate(scan.start_date)} – {formatDate(scan.end_date)}{scannedAt && ` · scanned ${formatTime(scannedAt)}`}
             {" "}· Search by Exa · Prices by Yahoo Finance
           </p>
+          {describeSettings(scan.settings) && <p className="radar-hint">Searched with {describeSettings(scan.settings)}.</p>}
           {failures.map((company) => (
             <p className="feedback feedback--error" key={company.ticker}>{company.ticker}: {company.error}</p>
           ))}

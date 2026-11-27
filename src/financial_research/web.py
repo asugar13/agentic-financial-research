@@ -16,7 +16,7 @@ from pydantic import Field, field_validator
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
 from financial_research.radar import (
-    MissingExaKey, ScanCache, WatchlistPrices, WatchlistScan, price_history, scan_watchlist,
+    MissingExaKey, ScanCache, SearchSettings, WatchlistPrices, WatchlistScan, price_history, scan_watchlist,
 )
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.runner import run_saved_research
@@ -68,6 +68,10 @@ class WatchlistRequest(Model):
         if not normalized or not all(re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker) for ticker in normalized):
             raise ValueError("Enter stock tickers such as NVDA, BRK-B, or SAP.DE.")
         return normalized
+
+
+class ScanRequest(WatchlistRequest):
+    settings: SearchSettings = SearchSettings()
 
 
 class ResearchRunResponse(Model):
@@ -133,9 +137,9 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
         return price_history(request.tickers, days=request.days, cache=cache)
 
     @app.post("/api/scan", response_model=WatchlistScan)
-    def scan(request: WatchlistRequest) -> WatchlistScan:
+    def scan(request: ScanRequest) -> WatchlistScan:
         try:
-            return scan_watchlist(request.tickers, days=request.days, cache=cache)
+            return scan_watchlist(request.tickers, days=request.days, cache=cache, settings=request.settings)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
 
