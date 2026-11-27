@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
@@ -10,10 +11,11 @@ from uuid import UUID, uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
+from financial_research.radar import MissingExaKey, WatchlistScan, scan_watchlist
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.runner import run_saved_research
 
@@ -51,6 +53,19 @@ class Source(Model):
             url=item["source_uri"], excerpt=item["content"],
             period_start=item["period_start"], period_end=item["period_end"],
         )
+
+
+class ScanRequest(Model):
+    tickers: list[str] = Field(min_length=1, max_length=15)
+    days: int = Field(default=30, ge=1, le=90)
+
+    @field_validator("tickers")
+    @classmethod
+    def valid_tickers(cls, tickers: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(ticker.strip().upper() for ticker in tickers if ticker.strip()))
+        if not normalized or not all(re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker) for ticker in normalized):
+            raise ValueError("Enter stock tickers such as NVDA, BRK-B, or SAP.DE.")
+        return normalized
 
 
 class ResearchRunResponse(Model):
@@ -108,6 +123,13 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
             await run_in_threadpool(execute, run_id, request)
         finally:
             active = None
+
+    @app.post("/api/scan", response_model=WatchlistScan)
+    def scan(request: ScanRequest) -> WatchlistScan:
+        try:
+            return scan_watchlist(request.tickers, days=request.days)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
 
     @app.post("/api/runs", status_code=202)
     async def start(request: ResearchRunRequest, background: BackgroundTasks):

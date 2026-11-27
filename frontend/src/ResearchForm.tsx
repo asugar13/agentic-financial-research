@@ -79,7 +79,7 @@ export function ResearchForm({ config }: { config: Config }) {
 
   return <>
     <header className="page-intro">
-      <h1 className="page-intro__title">Research desk<span className="page-intro__accent">.</span></h1>
+      <h1 className="page-intro__title">Custom research<span className="page-intro__accent">.</span></h1>
       <p className="page-intro__description">Ask a market question. Follow the evidence behind the answer.</p>
     </header>
 

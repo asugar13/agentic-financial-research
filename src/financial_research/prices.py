@@ -22,6 +22,7 @@ class _DailyResponse(BaseModel):
     prices: dict[date, Annotated[float, Field(gt=0, allow_inf_nan=False)]] = Field(min_length=1)
     currency: str | None = None
     time_zone: str | None = None
+    name: str | None = None
 
 
 def _fetch(request: HistoricalPriceRequest, symbol: str) -> _DailyResponse:
@@ -58,6 +59,7 @@ def _fetch(request: HistoricalPriceRequest, symbol: str) -> _DailyResponse:
     return _DailyResponse(
         prices=dict(zip(days, history["Close"])),
         currency=metadata.get("currency"), time_zone=metadata.get("exchangeTimezoneName"),
+        name=metadata.get("longName") or metadata.get("shortName"),
     )
 
 

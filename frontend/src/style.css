@@ -621,3 +621,226 @@ a {
     width: 100%;
   }
 }
+
+/* Event radar */
+
+.site-header__nav {
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+}
+
+.site-header__nav a {
+  color: #c6d3ed;
+  text-decoration: none;
+}
+
+.site-header__nav a:hover {
+  color: #ffffff;
+}
+
+.radar-intro {
+  padding-bottom: 8px;
+}
+
+.radar-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.radar-form__tickers {
+  flex: 1 1 320px;
+}
+
+.radar-hint,
+.radar-status,
+.radar-summary {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 8px 0 16px;
+}
+
+.radar-summary {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 28px;
+}
+
+.radar-table-wrap {
+  overflow-x: auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--accent);
+}
+
+.radar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.radar-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  font: 11px/1.5 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.radar-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #eceff4;
+  vertical-align: top;
+}
+
+.radar-row--open td,
+.radar-detail-row td {
+  background: #f6f8fc;
+}
+
+.radar-date {
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-company span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.radar-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  line-height: 1.45;
+}
+
+.radar-toggle:hover .radar-headline {
+  color: var(--accent);
+}
+
+.category {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font: 11px/1.8 var(--mono);
+  text-transform: uppercase;
+  background: #eef0f4;
+  color: #3d4a5f;
+}
+
+.category--earnings,
+.category--guidance {
+  background: var(--tint);
+  color: #1b3a9e;
+}
+
+.category--legal,
+.category--regulatory {
+  background: #fbebe7;
+  color: #8f2a1d;
+}
+
+.category--deal {
+  background: #e6f4ec;
+  color: #1d6b3f;
+}
+
+.category--management {
+  background: #fdf3dc;
+  color: #7a5200;
+}
+
+.category--product {
+  background: #f1eafd;
+  color: #5b2fa3;
+}
+
+.move {
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.move--up {
+  color: #0f7b45;
+}
+
+.move--down {
+  color: #b42318;
+}
+
+.move--flat {
+  color: var(--muted);
+}
+
+.scheduled {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.scheduled--upcoming {
+  color: #7a5200;
+  font-weight: 600;
+}
+
+.radar-sources {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.radar-sources a {
+  margin-right: 8px;
+}
+
+.radar-sources span {
+  color: var(--muted);
+}
+
+.radar-detail {
+  display: grid;
+  gap: 10px;
+  max-width: 880px;
+  padding: 4px 0 8px;
+}
+
+.radar-detail p {
+  margin: 0;
+}
+
+.radar-detail__reaction,
+.radar-detail__host,
+.radar-detail__confidence {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.radar-detail__sources {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.radar-detail__host {
+  margin-left: 8px;
+}
+
+.radar-detail__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}

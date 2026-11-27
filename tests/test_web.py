@@ -82,3 +82,22 @@ def test_failed_provider_setup_and_interrupted_runs_remain_readable(tmp_path, mo
         metadata.write_text(json.dumps({"status": "running", "mode": "demo", "question": DEMO_QUESTION}))
         interrupted = client.get(f"/api/runs/{run_id}").json()
         assert interrupted["status"] == "failed" and "restarted" in interrupted["error"]
+
+
+def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypatch):
+    calls = []
+
+    def scan(tickers, *, days):
+        calls.append((tickers, days))
+        if "NOKEY" in tickers:
+            raise web.MissingExaKey("Set EXA_API_KEY on the server before scanning.")
+        return web.WatchlistScan(start_date="2026-10-28", end_date="2026-11-27", benchmark="SPY", companies=[])
+
+    monkeypatch.setattr(web, "scan_watchlist", scan)
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/scan", json={"tickers": [" nvda", "NVDA", "brk-b"], "days": 7}).status_code == 200
+        assert calls == [(["NVDA", "BRK-B"], 7)]
+        for invalid in ({"tickers": []}, {"tickers": ["NVDA; rm"]}, {"tickers": ["A"] * 16}, {"tickers": ["NVDA"], "days": 91}):
+            assert client.post("/api/scan", json=invalid).status_code == 422
+        missing = client.post("/api/scan", json={"tickers": ["NOKEY"]})
+        assert missing.status_code == 503 and "EXA_API_KEY" in missing.json()["detail"]

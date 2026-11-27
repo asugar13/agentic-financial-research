@@ -75,7 +75,7 @@ export function ResearchRun({ id }: { id: string }) {
   }, [id, attempt]);
 
   return <>
-    <a className="back-link" href="/">← New brief</a>
+    <a className="back-link" href="/">← Event radar</a>
 
     {error && <div className="feedback feedback--error" role="alert">
       {error} <button onClick={() => setAttempt(attempt + 1)}>Retry loading</button>

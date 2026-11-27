@@ -14,6 +14,19 @@ from requests.exceptions import RequestException
 from financial_research.models import Observation, ToolResult, WebSearchRequest
 
 
+def exa_api_key() -> str | None:
+    """Return the Exa key; the environment takes precedence over the local .env file."""
+    key = os.environ.get("EXA_API_KEY")
+    if not key:
+        try:
+            from dotenv import dotenv_values
+        except ImportError:
+            return None
+        key = dotenv_values(Path.cwd() / ".env", interpolate=False).get("EXA_API_KEY")
+    return key.strip() if key and key.strip() else None
+
+
+
 def _observation(item, request: WebSearchRequest, start: date | None, end: date | None) -> Observation | None:
     """Keep dated HTTP sources with usable excerpts; never invent missing publication dates."""
     try:
@@ -48,13 +61,12 @@ def search_news(
     if (start_date is None) != (end_date is None) or (start_date is not None and start_date >= end_date):
         return ToolResult(error="Provide both news dates with start-date earlier than end-date, or neither.")
     try:
-        from dotenv import dotenv_values
         from exa_py import Exa
     except ImportError:
         return ToolResult(error="Install Exa support with: python -m pip install -e '.[news]'")
 
-    api_key = os.environ.get("EXA_API_KEY") or dotenv_values(Path.cwd() / ".env", interpolate=False).get("EXA_API_KEY")
-    if not api_key or not api_key.strip():
+    api_key = exa_api_key()
+    if not api_key:
         return ToolResult(error="Set EXA_API_KEY in the environment or the local .env file before searching.")
 
     # Only a user-selected bounded interval warrants hard publication-date filters.
@@ -65,7 +77,7 @@ def search_news(
             "end_published_date": datetime.combine(end_date + timedelta(days=1), time.min, timezone.utc).isoformat(),
         }
     try:
-        result = Exa(api_key=api_key.strip(), timeout=20).search(
+        result = Exa(api_key=api_key, timeout=20).search(
             request.query, objective=request.objective, contents={"highlights": True}, **options,
         )
         observations = []
