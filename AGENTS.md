@@ -1,6 +1,12 @@
 # Repository workflow
 
 - Agents may open and update PRs but must never merge them. The user is the navigator and handles merging.
+- Ask explicitly before every commit, including local checkpoints. Agreeing to a plan is not approval to commit. Leave changes uncommitted and unstaged by default.
+- The user is the sole author: no `Co-Authored-By` trailers and no "Generated with" footers in commits or PRs.
+- PR descriptions are short plain prose in the user's voice: what changed and why. No testing or verification section.
+- Never commit `docs/pass-1.md` or `docs/exa-demo.md`; they are personal notes.
+- Help level (see the AWS rules below): HIGH for AWS and infrastructure changes; brief high-level summaries are enough for demo feature code.
+- To stop a local server, kill only the process listening on its port (`lsof -ti tcp:PORT -sTCP:LISTEN`), never every process connected to it (that includes the browser).
 
 <!-- BEGIN AWS Agent Toolkit rules -->
 
@@ -90,3 +96,47 @@ Constraints for each level:
 - MUST still execute the user's choice if they disagree with a suggestion
 
 <!-- END AWS Agent Toolkit rules -->
+
+# Project context
+
+An agentic financial research app: a FastAPI backend and a React frontend. A LangGraph research agent chooses tools (Yahoo prices, FRED macro data, Exa web news, quantitative analysis) and writes cited briefs, using Qwen3 32B on Bedrock when hosted, Ollama locally, or an offline demo model.
+
+The current direction is an **Exa-powered event radar for retail brokers**: a portfolio view whose price moves are explained by cited company events, so a broker's users never leave the app to find out why their stocks moved. Demo prep notes live in `docs/exa-demo.md` (local and git-ignored).
+
+## Layout
+
+- `src/financial_research/radar.py`: watchlist scans (one Exa structured search per company), price moves against SPY, price history, and the file cache.
+- `src/financial_research/web.py`: FastAPI app. `/api/config`, `/api/prices`, `/api/scan`, `/api/runs` (agent runs); serves `frontend/dist`.
+- Research agent: `workflow.py`, `tools.py`, `research_model.py`, `bedrock_model.py`, `ollama_model.py`, `news.py`, `prices.py`, `macro.py`, `quant.py`, `runner.py`.
+- `frontend/src`: `main.tsx` (tabs, shared watchlist and scan, error boundaries), `Portfolio.tsx` and `PriceChart.tsx`, `Radar.tsx`, `ResearchForm.tsx` and `ResearchRun.tsx` (custom research and agent runs), `watchlist.ts` (shared helpers), `api.ts` (types).
+- `deployment/`: `deploy.py`, `host.sh`, `stack.yaml`, `Caddyfile`. See `deployment/README.md`.
+
+## Running and checking locally
+
+- Install with `.venv/bin/python -m pip install -c requirements.lock -e '.[dev,web,news,bedrock]'`, then `npm ci --prefix frontend` and `npm run build --prefix frontend` (the build also type-checks).
+- Start with `.venv/bin/python -m uvicorn financial_research.web:app --port 18001`. Port 8000 is often taken on the user's Mac.
+- `EXA_API_KEY` comes from the environment or the local `.env`. Bedrock needs `aws login --profile financial-research` and `AWS_PROFILE=financial-research`.
+- Tests: `.venv/bin/python -m pytest`. Exa and Yahoo are always faked in tests.
+- After a frontend rebuild, hard-refresh open tabs: an old bundle crashes when an API field is renamed.
+
+## How the event radar works, and why
+
+- One Exa `/search` per company: `type: "auto"`, `category: "news"`, a published-date window, 10 results, and `outputSchema` = `EVENT_SCHEMA` (`reported_date`, `scheduled_date`, `category`, `headline`, `why_it_matters`). Exa allows at most 10 properties and 2 nesting levels; a test guards this.
+- `auto`, not `deep`: in testing, `deep` merged several events into one row, and it costs $0.012 per search instead of $0.007.
+- `category: "news"` stays: without it, law-firm solicitations and aggregator pages appeared, and dates got worse.
+- Each event's sources and confidence come from Exa's per-field `grounding`; an event's confidence is its weakest field's.
+- The search uses the company name from Yahoo's metadata (`longName`) to avoid ambiguous tickers.
+- Price moves start from `reported_date`, when the news became public. A future `scheduled_date` marks the event as upcoming. Exa occasionally takes a later article's date.
+- A price move runs from the last close before the news to the first close after it, minus SPY over the same days. Events close together share a window; it shows a reaction, not a cause.
+- Cache: JSON per kind, ticker, and lookback under `runs/cache/v{CACHE_VERSION}/`. Events are reused for 12 hours and prices for 30 minutes. If a live call fails, the last good copy is served with a notice. Failed scans are never cached. Bump `CACHE_VERSION` when a cached shape changes.
+- Cost: about $0.007 per company per scan.
+
+## Open items and reminders
+
+- **Next: search settings** behind a collapsed panel: include and exclude domains (`includeDomains` / `excludeDomains`), a free-text focus appended to the query, results per company (10 or 25), and client-side filters for event type and minimum confidence.
+- **Technical catch: the cache key must include the search settings.** Otherwise a tweaked search returns the cached default results and the settings appear to do nothing. Client-side filters (event type, confidence) need no new key.
+- **Revisit later: a `deep` search toggle.** Left out because `deep` merges several events into one row; it would need schema or prompt changes, or splitting rows.
+- **Revisit later: a custom column where the model drafts the schema.** Left out because it rewrites the schema. Validate drafts against Exa's limits and keep preset schemas as a fallback.
+- **Research this event:** decide between the current Bedrock agent and Exa's Agent API, and between an inline brief and a separate page. It depends on PR #16 (Bedrock tool-selection fix).
+- **Monitors:** the production path for intraday updates on top of the daily scan. Its webhook needs an unauthenticated, signature-verified path past Caddy's basic auth.
+- **Deployment:** the live server still runs an older release without the radar. The next deploy also replaces the security group, because its description changed in #19; a change-set preview showed the server is modified in place and keeps its IP. PR #23 (sample portfolio) is awaiting a decision.
