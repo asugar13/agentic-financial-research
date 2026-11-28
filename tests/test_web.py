@@ -153,3 +153,17 @@ def test_explain_validates_events_and_maps_failures(tmp_path, monkeypatch):
                         {**event, "ticker": "NVDA", "headline": "x" * 501},
                         {**event, "ticker": "NVDA", "reported_date": (today + timedelta(days=1)).isoformat()}):
             assert client.post("/api/explain", json=invalid).status_code == 422
+
+
+def test_discover_validates_queries_and_maps_failures(tmp_path, monkeypatch):
+    def search(query, *, cache):
+        if query == "no key":
+            raise web.MissingExaKey("Set EXA_API_KEY on the server before searching companies.")
+        raise web.DiscoverError("Exa could not search companies right now; try again shortly.")
+
+    monkeypatch.setattr(web, "discover_companies", search)
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/discover", json={"query": "no key"}).status_code == 503
+        assert client.post("/api/discover", json={"query": "chip makers"}).status_code == 502
+        for invalid in ({"query": ""}, {"query": "x"}, {"query": "x" * 201}, {}):
+            assert client.post("/api/discover", json=invalid).status_code == 422

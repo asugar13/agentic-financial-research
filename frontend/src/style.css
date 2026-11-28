@@ -1231,3 +1231,46 @@ a {
     animation-duration: 2.4s;
   }
 }
+
+/* Discover */
+
+.discover-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.discover-example {
+  padding: 3px 10px;
+  border: 1px solid var(--tint-rule);
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--navy);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.discover-example:hover {
+  border-color: var(--accent);
+}
+
+.discover-add {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.discover-held {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d6b3f;
+  white-space: nowrap;
+}
+
+.discover-next {
+  margin-top: 14px;
+  font-weight: 600;
+}

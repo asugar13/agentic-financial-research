@@ -14,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field, field_validator
 
+from financial_research.discover import DiscoverError, Discovery, discover_companies
 from financial_research.explain import EventExplanation, ExplainError, explain_event
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
@@ -74,6 +75,10 @@ class WatchlistRequest(Model):
 
 class ScanRequest(WatchlistRequest):
     settings: SearchSettings = SearchSettings()
+
+
+class DiscoverRequest(Model):
+    query: str = Field(min_length=2, max_length=200)
 
 
 class ExplainRequest(Model):
@@ -167,6 +172,15 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
             return scan_watchlist(request.tickers, days=request.days, cache=cache, settings=request.settings)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
+
+    @app.post("/api/discover", response_model=Discovery)
+    def discover(request: DiscoverRequest) -> Discovery:
+        try:
+            return discover_companies(request.query, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except DiscoverError as exc:
+            raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/explain", response_model=EventExplanation)
     def explain(request: ExplainRequest) -> EventExplanation:

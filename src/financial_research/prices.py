@@ -23,6 +23,7 @@ class _DailyResponse(BaseModel):
     currency: str | None = None
     time_zone: str | None = None
     name: str | None = None
+    instrument_type: str | None = None
 
 
 def _fetch(request: HistoricalPriceRequest, symbol: str) -> _DailyResponse:
@@ -42,6 +43,12 @@ def _fetch(request: HistoricalPriceRequest, symbol: str) -> _DailyResponse:
             )
         if "Close" not in history.columns:
             raise _PriceError(f"Yahoo Finance returned no Close column for {symbol}.")
+        # Yahoo can list the current session before its close exists (common for non-US
+        # exchanges). Drop only that latest placeholder; earlier gaps still fail validation.
+        closes = history["Close"]
+        latest = closes.index.max()
+        if closes[closes.index == latest].isna().all() and closes.notna().any():
+            history = history[history.index != latest]
         metadata = ticker.get_history_metadata()
     except _PriceError:
         raise
@@ -59,7 +66,7 @@ def _fetch(request: HistoricalPriceRequest, symbol: str) -> _DailyResponse:
     return _DailyResponse(
         prices=dict(zip(days, history["Close"])),
         currency=metadata.get("currency"), time_zone=metadata.get("exchangeTimezoneName"),
-        name=metadata.get("longName") or metadata.get("shortName"),
+        name=metadata.get("longName") or metadata.get("shortName"), instrument_type=metadata.get("instrumentType"),
     )
 
 
