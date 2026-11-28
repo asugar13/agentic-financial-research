@@ -3,17 +3,19 @@ import { createRoot } from "react-dom/client";
 import "@fontsource/dm-sans/latin-400.css";
 import "@fontsource/dm-sans/latin-600.css";
 import "@fontsource/instrument-serif/latin-400.css";
-import { api, type Config, type WatchlistPrices, type WatchlistScan } from "./api";
+import { api, type Config, type EventCategory, type WatchlistPrices, type WatchlistScan } from "./api";
 import { Portfolio } from "./Portfolio";
 import { Radar } from "./Radar";
 import { DEFAULT_FILTERS, DEFAULT_SETTINGS, SearchSettingsPanel, settingsPayload, type Filters, type SettingsForm } from "./SearchSettings";
+import { EventPage } from "./EventPage";
 import { ResearchForm } from "./ResearchForm";
 import { ResearchRun } from "./ResearchRun";
 import { WatchlistForm } from "./WatchlistForm";
 import { DEFAULT_WATCHLIST, eventRows, formatTime, parseTickers, readStored, writeStored, type Row } from "./watchlist";
 import "./style.css";
 
-type View = "portfolio" | "radar" | "research";
+type View = "portfolio" | "radar" | "research" | "event";
+type Navigate = (view: View, query?: Record<string, string>) => void;
 const VIEWS: { id: View; label: string }[] = [
   { id: "portfolio", label: "Portfolio" }, { id: "radar", label: "Event radar" }, { id: "research", label: "Custom research" },
 ];
@@ -25,7 +27,7 @@ const session = () => sessionStorage;
 
 function readView(): View {
   const view = new URLSearchParams(window.location.search).get("view");
-  return view === "radar" || view === "research" ? view : "portfolio";
+  return view === "radar" || view === "research" || view === "event" ? view : "portfolio";
 }
 
 // A rendering error shows a message instead of a blank page.
@@ -48,7 +50,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
-function Workspace({ config, view, onNavigate }: { config: Config; view: View; onNavigate: (view: View) => void }) {
+function Workspace({ config, view, onNavigate }: { config: Config; view: View; onNavigate: Navigate }) {
   const [watchlist, setWatchlist] = useState(() => readStored(local, "radar-watchlist", DEFAULT_WATCHLIST));
   const [days, setDays] = useState(30);
   const [prices, setPrices] = useState(() => readStored<Stored<WatchlistPrices> | null>(session, "radar-prices", null));
@@ -135,8 +137,16 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
 
   let content: ReactNode;
   if (view === "research") content = <ResearchForm config={config} />;
+  else if (view === "event") {
+    // The event lives in the address, so the page survives a reload and can be shared.
+    const params = new URLSearchParams(window.location.search);
+    content = <EventPage key={window.location.search} ticker={params.get("ticker") ?? ""} date={params.get("date") ?? ""}
+      headline={params.get("headline") ?? ""} category={(params.get("category") ?? "other") as EventCategory}
+      settings={settingsPayload(settings)} onBack={() => onNavigate("radar")} />;
+  }
   else if (view === "radar") {
-    content = <Radar config={config} scan={scan?.data ?? null} rows={rows} filtered={filtered} open={open} onOpen={setOpen} notice={notice}
+    content = <Radar scan={scan?.data ?? null} rows={rows} filtered={filtered} open={open} onOpen={setOpen} notice={notice}
+      onResearch={(row: Row) => onNavigate("event", { ticker: row.ticker, date: row.reported_date, headline: row.headline, category: row.category })}
       form={form(runScan, <button className="button button--primary" disabled={busy}>{loading === "scan" ? "Scanning…" : "Scan"}</button>)} />;
   } else {
     content = <Portfolio prices={prices?.data ?? null} rows={scan && scan.key === prices?.key ? rows : []}
@@ -161,8 +171,9 @@ function App() {
   const [failed, setFailed] = useState(false);
 
   // Tabs switch without reloading, so results stay in memory; the URL still reflects the tab.
-  const navigate = (next: View) => {
-    window.history.pushState(null, "", next === "portfolio" ? "/" : `/?view=${next}`);
+  const navigate: Navigate = (next, query) => {
+    const search = new URLSearchParams(next === "portfolio" ? {} : { view: next, ...query }).toString();
+    window.history.pushState(null, "", search ? `/?${search}` : "/");
     setView(next);
   };
   useEffect(() => {
@@ -192,7 +203,7 @@ function App() {
       <nav className="site-header__nav" aria-label="Sections">
         {VIEWS.map((item) => (
           <a key={item.id} href={item.id === "portfolio" ? "/" : `/?view=${item.id}`}
-            aria-current={!id && view === item.id ? "page" : undefined}
+            aria-current={!id && (view === item.id || (view === "event" && item.id === "radar")) ? "page" : undefined}
             onClick={(event) => {
               if (id || event.metaKey || event.ctrlKey || event.shiftKey) return;
               event.preventDefault();

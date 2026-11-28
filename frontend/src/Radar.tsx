@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { api, type Config, type WatchlistScan } from "./api";
+import { Fragment, useEffect, type ReactNode } from "react";
+import type { WatchlistScan } from "./api";
 import { describeSettings } from "./SearchSettings";
-import { formatDate, formatTime, host, isoDay, moveLabel, signed, type Row } from "./watchlist";
+import { formatDate, formatTime, host, moveLabel, signed, type Row } from "./watchlist";
 
-function Detail({ row, onResearch, starting }: { row: Row; onResearch: () => void; starting: boolean }) {
+function Detail({ row, onResearch }: { row: Row; onResearch: () => void }) {
   const reaction = row.reaction;
   return (
     <div className="radar-detail">
@@ -26,16 +26,13 @@ function Detail({ row, onResearch, starting }: { row: Row; onResearch: () => voi
       </ul>
       <div className="radar-detail__footer">
         {row.confidence && <span className="radar-detail__confidence">Exa grounding confidence: {row.confidence}</span>}
-        <button className="button button--primary" type="button" onClick={onResearch} disabled={starting}>
-          {starting ? "Starting…" : "Research this event"}
-        </button>
+        <button className="button button--primary" type="button" onClick={onResearch}>Research this event</button>
       </div>
     </div>
   );
 }
 
 interface Props {
-  config: Config;
   form: ReactNode;
   notice: ReactNode;
   scan: WatchlistScan | null;
@@ -43,41 +40,14 @@ interface Props {
   filtered: boolean;
   open: string | null;
   onOpen: (key: string | null) => void;
+  onResearch: (row: Row) => void;
 }
 
-export function Radar({ config, form, notice, scan, rows, filtered, open, onOpen }: Props) {
-  const [starting, setStarting] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
+export function Radar({ form, notice, scan, rows, filtered, open, onOpen, onResearch }: Props) {
   // Arriving from a chart dot opens that row; bring it into view.
   useEffect(() => {
     if (open) document.getElementById(`event-${open}`)?.scrollIntoView({ block: "center" });
   }, [open]);
-
-  // Hand the event to the existing research agent with a two-week price window around it.
-  async function research(row: Row) {
-    setStarting(row.key);
-    setError("");
-    const mode = config.modes.includes("bedrock") ? "bedrock" : config.modes.find((item) => item !== "demo");
-    const day = new Date(row.reported_date + "T00:00:00Z");
-    const start = new Date(day.getTime() - 7 * 86_400_000);
-    const end = new Date(Math.min(day.getTime() + 7 * 86_400_000, Date.now()));
-    try {
-      const result = await api<{ id: string }>("runs", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: `Why did ${row.ticker} move around ${row.reported_date}? Reported event: ${row.headline} `
-            + "Explain the price reaction with cited sources and separate reported facts from inference.",
-          mode, scope: { symbols: [row.ticker], start_date: isoDay(start), end_date: isoDay(end) },
-          max_tool_calls: 4, review: false,
-        }),
-      });
-      window.location.assign("?run=" + encodeURIComponent(result.id));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Research could not start.");
-      setStarting(null);
-    }
-  }
 
   const failures = scan?.companies.filter((company) => company.error) ?? [];
   // Cached scans show when they ran: one scan per company per day, shared by every visitor.
@@ -93,7 +63,6 @@ export function Radar({ config, form, notice, scan, rows, filtered, open, onOpen
       </section>
       {form}
       {notice}
-      {error && <p className="feedback feedback--error" role="alert">{error}</p>}
 
       {scan && (
         <section aria-label="Scan results">
@@ -143,7 +112,7 @@ export function Radar({ config, form, notice, scan, rows, filtered, open, onOpen
                         {open === row.key && (
                           <tr className="radar-detail-row">
                             <td colSpan={5}>
-                              <Detail row={row} starting={starting === row.key} onResearch={() => research(row)} />
+                              <Detail row={row} onResearch={() => onResearch(row)} />
                             </td>
                           </tr>
                         )}
