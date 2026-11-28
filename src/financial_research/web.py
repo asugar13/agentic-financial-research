@@ -12,8 +12,9 @@ from uuid import UUID, uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
+from financial_research.ask import AskError, StockAnswer, ask_about_stock
 from financial_research.discover import DiscoverError, Discovery, discover_companies
 from financial_research.explain import EventExplanation, ExplainError, explain_event
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
@@ -75,6 +76,30 @@ class WatchlistRequest(Model):
 
 class ScanRequest(WatchlistRequest):
     settings: SearchSettings = SearchSettings()
+
+
+class AskRequest(Model):
+    ticker: str = Field(min_length=1, max_length=12)
+    question: str = Field(min_length=3, max_length=300)
+    start_date: date
+    end_date: date
+    settings: SearchSettings = SearchSettings()
+
+    @field_validator("ticker")
+    @classmethod
+    def valid_ticker(cls, ticker: str) -> str:
+        ticker = ticker.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
+            raise ValueError("Enter a stock ticker such as NVDA, BRK-B, or SAP.DE.")
+        return ticker
+
+    @model_validator(mode="after")
+    def sensible_period(self) -> "AskRequest":
+        if self.end_date > date.today():
+            raise ValueError("The period can't end in the future.")
+        if not timedelta(0) <= self.end_date - self.start_date <= timedelta(days=366):
+            raise ValueError("Choose a start date before the end date, at most a year apart.")
+        return self
 
 
 class DiscoverRequest(Model):
@@ -172,6 +197,16 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
             return scan_watchlist(request.tickers, days=request.days, cache=cache, settings=request.settings)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
+
+    @app.post("/api/ask", response_model=StockAnswer)
+    def ask(request: AskRequest) -> StockAnswer:
+        try:
+            return ask_about_stock(request.ticker, request.question, request.start_date, request.end_date,
+                                   settings=request.settings, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except AskError as exc:
+            raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/discover", response_model=Discovery)
     def discover(request: DiscoverRequest) -> Discovery:

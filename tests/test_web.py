@@ -167,3 +167,26 @@ def test_discover_validates_queries_and_maps_failures(tmp_path, monkeypatch):
         assert client.post("/api/discover", json={"query": "chip makers"}).status_code == 502
         for invalid in ({"query": ""}, {"query": "x"}, {"query": "x" * 201}, {}):
             assert client.post("/api/discover", json=invalid).status_code == 422
+
+
+def test_ask_validates_the_period_and_maps_failures(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+
+    calls = []
+
+    def answer(ticker, question, start, end, *, settings, cache):
+        calls.append((ticker, question, start, end))
+        raise web.AskError("Exa could not answer this right now; try again shortly.")
+
+    monkeypatch.setattr(web, "ask_about_stock", answer)
+    today = date.today()
+    good = {"ticker": "ba", "question": "What happened?", "start_date": (today - timedelta(days=30)).isoformat(),
+            "end_date": today.isoformat()}
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/ask", json=good).status_code == 502
+        assert calls[0][0] == "BA"
+        for changes in ({"end_date": (today + timedelta(days=1)).isoformat()},
+                        {"start_date": (today + timedelta(days=1)).isoformat()},
+                        {"start_date": (today - timedelta(days=400)).isoformat()},
+                        {"question": "Hi"}, {"ticker": "BA; rm"}):
+            assert client.post("/api/ask", json={**good, **changes}).status_code == 422

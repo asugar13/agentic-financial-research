@@ -1274,3 +1274,38 @@ a {
   margin-top: 14px;
   font-weight: 600;
 }
+
+/* Ask */
+
+.ask-form {
+  display: grid;
+  grid-template-columns: 120px 160px 160px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+@media (max-width: 900px) {
+  .ask-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ask-form__question {
+    grid-column: 1 / -1;
+  }
+}
+
+.discover-actions {
+  white-space: nowrap;
+}
+
+.discover-ask {
+  margin-right: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}

@@ -119,6 +119,17 @@ def parse_explanation(output: Any) -> tuple[Finding, list[Driver], Finding, Find
     return summary, drivers, context, _finding(content, "upcoming", grounding)
 
 
+def result_sources(results: Any) -> list[ResultSource]:
+    """Every titled web page Exa read, with its publication date when known."""
+    sources = []
+    for item in results or []:
+        url, title = getattr(item, "url", None), getattr(item, "title", None)
+        if isinstance(url, str) and url.startswith(("https://", "http://")) and title:
+            published = str(getattr(item, "published_date", "") or "")[:10]
+            sources.append(ResultSource(title=title, url=url, published_date=published or None))
+    return sources
+
+
 def _research(ticker: str, name: str | None, reported: date, headline: str, today: date,
               api_key: str, settings: SearchSettings) -> tuple[Any, list[ResultSource]]:
     from exa_py import Exa
@@ -137,13 +148,7 @@ def _research(ticker: str, name: str | None, reported: date, headline: str, toda
         start_published_date=datetime.combine(start, time.min, timezone.utc).isoformat(),
         end_published_date=datetime.combine(end + timedelta(days=1), time.min, timezone.utc).isoformat(), **domains,
     )
-    sources = []
-    for item in response.results or []:
-        url, title = getattr(item, "url", None), getattr(item, "title", None)
-        if isinstance(url, str) and url.startswith(("https://", "http://")) and title:
-            published = str(getattr(item, "published_date", "") or "")[:10]
-            sources.append(ResultSource(title=title, url=url, published_date=published or None))
-    return response.output, sources
+    return response.output, result_sources(response.results)
 
 
 def _variant(reported: date, headline: str, settings: SearchSettings) -> str:
