@@ -190,3 +190,14 @@ def test_ask_validates_the_period_and_maps_failures(tmp_path, monkeypatch):
                         {"start_date": (today - timedelta(days=400)).isoformat()},
                         {"question": "Hi"}, {"ticker": "BA; rm"}):
             assert client.post("/api/ask", json={**good, **changes}).status_code == 422
+
+
+def test_market_validates_the_lookback_and_maps_failures(tmp_path, monkeypatch):
+    def scan(*, days, cache):
+        raise web.MarketError("Exa could not scan market news right now; try again shortly.")
+
+    monkeypatch.setattr(web, "scan_market", scan)
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/market", json={"days": 30}).status_code == 502
+        for invalid in ({"days": 0}, {"days": 91}):
+            assert client.post("/api/market", json=invalid).status_code == 422
