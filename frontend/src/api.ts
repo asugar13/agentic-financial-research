@@ -76,11 +76,27 @@ export interface CompanyEvent {
   } | null;
 }
 
+export interface SearchSettings {
+  focus: string;
+  include_domains: string[];
+  exclude_domains: string[];
+  num_results: 10 | 25;
+}
+
 export interface WatchlistScan {
   start_date: string;
   end_date: string;
   benchmark: string;
-  companies: { ticker: string; name: string | null; events: CompanyEvent[]; error: string | null }[];
+  // Missing on scans saved by older versions of the page.
+  settings?: SearchSettings;
+  companies: {
+    ticker: string;
+    name: string | null;
+    events: CompanyEvent[];
+    error: string | null;
+    scanned_at: string | null;
+    stale: boolean;
+  }[];
 }
 
 export interface PriceSeries {
@@ -90,10 +106,77 @@ export interface PriceSeries {
   prices: { date: string; close: number }[];
   change_pct: number | null;
   error: string | null;
+  fetched_at: string | null;
+  stale: boolean;
 }
 
 export interface WatchlistPrices {
   start_date: string;
   end_date: string;
   series: PriceSeries[];
+}
+
+export interface Citation {
+  title: string;
+  url: string;
+}
+
+export interface Finding {
+  text: string;
+  sources: Citation[];
+  confidence: "low" | "medium" | "high" | null;
+}
+
+export interface EventExplanation {
+  ticker: string;
+  name: string | null;
+  currency: string | null;
+  reported_date: string;
+  headline: string;
+  summary: Finding;
+  drivers: { point: string; evidence: string; sources: Citation[]; confidence: Finding["confidence"] }[];
+  market_context: Finding;
+  upcoming: Finding | null;
+  sources: { title: string; url: string; published_date: string | null }[];
+  prices: { date: string; close: number }[];
+  reaction: CompanyEvent["reaction"];
+  settings: SearchSettings;
+  explained_at: string;
+  stale: boolean;
+}
+
+export interface DiscoveredCompany {
+  name: string;
+  ticker: string;
+  exchange: string | null;
+  description: string;
+  sources: Citation[];
+  confidence: Finding["confidence"];
+  last_close: number | null;
+  currency: string | null;
+}
+
+export interface Discovery {
+  query: string;
+  companies: DiscoveredCompany[];
+  dropped: string[];
+  discovered_at: string;
+  stale: boolean;
+}
+
+export interface StockAnswer {
+  ticker: string;
+  name: string | null;
+  currency: string | null;
+  question: string;
+  start_date: string;
+  end_date: string;
+  answer: Finding;
+  key_points: { point: string; evidence: string; sources: Citation[]; confidence: Finding["confidence"] }[];
+  gaps: Finding | null;
+  sources: { title: string; url: string; published_date: string | null }[];
+  prices: { date: string; close: number }[];
+  settings: SearchSettings;
+  answered_at: string;
+  stale: boolean;
 }

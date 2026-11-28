@@ -1,6 +1,7 @@
 """HTTP entry point for the React UI. Run with one Uvicorn worker."""
 
 import json
+from datetime import date, timedelta
 import logging
 import os
 import re
@@ -11,11 +12,16 @@ from uuid import UUID, uuid4
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
+from financial_research.ask import AskError, StockAnswer, ask_about_stock
+from financial_research.discover import DiscoverError, Discovery, discover_companies
+from financial_research.explain import EventExplanation, ExplainError, explain_event
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
-from financial_research.radar import MissingExaKey, WatchlistPrices, WatchlistScan, price_history, scan_watchlist
+from financial_research.radar import (
+    MissingExaKey, ScanCache, SearchSettings, WatchlistPrices, WatchlistScan, price_history, scan_watchlist,
+)
 from financial_research.research_model import DEMO_QUESTION, DemoModel, ResearchModel
 from financial_research.runner import run_saved_research
 
@@ -68,6 +74,61 @@ class WatchlistRequest(Model):
         return normalized
 
 
+class ScanRequest(WatchlistRequest):
+    settings: SearchSettings = SearchSettings()
+
+
+class AskRequest(Model):
+    ticker: str = Field(min_length=1, max_length=12)
+    question: str = Field(min_length=3, max_length=300)
+    start_date: date
+    end_date: date
+    settings: SearchSettings = SearchSettings()
+
+    @field_validator("ticker")
+    @classmethod
+    def valid_ticker(cls, ticker: str) -> str:
+        ticker = ticker.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
+            raise ValueError("Enter a stock ticker such as NVDA, BRK-B, or SAP.DE.")
+        return ticker
+
+    @model_validator(mode="after")
+    def sensible_period(self) -> "AskRequest":
+        if self.end_date > date.today():
+            raise ValueError("The period can't end in the future.")
+        if not timedelta(0) <= self.end_date - self.start_date <= timedelta(days=366):
+            raise ValueError("Choose a start date before the end date, at most a year apart.")
+        return self
+
+
+class DiscoverRequest(Model):
+    query: str = Field(min_length=2, max_length=200)
+
+
+class ExplainRequest(Model):
+    ticker: str = Field(min_length=1, max_length=12)
+    reported_date: date
+    headline: str = Field(min_length=1, max_length=500)
+    settings: SearchSettings = SearchSettings()
+
+    @field_validator("ticker")
+    @classmethod
+    def valid_ticker(cls, ticker: str) -> str:
+        ticker = ticker.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
+            raise ValueError("Enter a stock ticker such as NVDA, BRK-B, or SAP.DE.")
+        return ticker
+
+    @field_validator("reported_date")
+    @classmethod
+    def recent_past(cls, reported: date) -> date:
+        today = date.today()
+        if not today - timedelta(days=400) <= reported <= today:
+            raise ValueError("Choose an event from the past year.")
+        return reported
+
+
 class ResearchRunResponse(Model):
     id: UUID
     status: Literal["running", "succeeded", "failed"]
@@ -95,6 +156,8 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
     hosted = os.getenv("RESEARCH_HOSTED") == "1"
     modes = ["bedrock", "demo"] if hosted else ["ollama", "bedrock", "demo"]
     active: ResearchRunResponse | None = None
+    # Scans and prices live with the saved runs, so they survive restarts and deploys.
+    cache = ScanCache(runs / "cache")
 
     @app.get("/api/config")
     def config():
@@ -126,14 +189,43 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
 
     @app.post("/api/prices", response_model=WatchlistPrices)
     def prices(request: WatchlistRequest) -> WatchlistPrices:
-        return price_history(request.tickers, days=request.days)
+        return price_history(request.tickers, days=request.days, cache=cache)
 
     @app.post("/api/scan", response_model=WatchlistScan)
-    def scan(request: WatchlistRequest) -> WatchlistScan:
+    def scan(request: ScanRequest) -> WatchlistScan:
         try:
-            return scan_watchlist(request.tickers, days=request.days)
+            return scan_watchlist(request.tickers, days=request.days, cache=cache, settings=request.settings)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
+
+    @app.post("/api/ask", response_model=StockAnswer)
+    def ask(request: AskRequest) -> StockAnswer:
+        try:
+            return ask_about_stock(request.ticker, request.question, request.start_date, request.end_date,
+                                   settings=request.settings, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except AskError as exc:
+            raise HTTPException(502, str(exc)) from None
+
+    @app.post("/api/discover", response_model=Discovery)
+    def discover(request: DiscoverRequest) -> Discovery:
+        try:
+            return discover_companies(request.query, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except DiscoverError as exc:
+            raise HTTPException(502, str(exc)) from None
+
+    @app.post("/api/explain", response_model=EventExplanation)
+    def explain(request: ExplainRequest) -> EventExplanation:
+        try:
+            return explain_event(request.ticker, request.reported_date, request.headline,
+                                 settings=request.settings, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except ExplainError as exc:
+            raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/runs", status_code=202)
     async def start(request: ResearchRunRequest, background: BackgroundTasks):

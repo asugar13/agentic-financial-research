@@ -11,9 +11,11 @@ interface Props {
   events: Row[];
   shares?: number;
   onSelect: (row: Row) => void;
+  // Replaces the default caption, e.g. on a page where dots don't link anywhere.
+  hint?: string;
 }
 
-export function PriceChart({ series, events, shares, onSelect }: Props) {
+export function PriceChart({ series, events, shares, onSelect, hint }: Props) {
   const [active, setActive] = useState<Row | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const points = series.prices;
@@ -109,8 +111,8 @@ export function PriceChart({ series, events, shares, onSelect }: Props) {
             <strong>{formatDate(point.date)}</strong> · {point.close.toFixed(2)} {series.currency ?? ""} ·{" "}
             {signed((point.close / points[0].close - 1) * 100)} since {formatDate(points[0].date)}
           </>
-        ) : events.length ? `${events.length} events. Hover a dot to read it, click to open it in Event radar.`
-          : "Hover the chart to see each day's close."}
+        ) : hint ?? (events.length ? `${events.length} events. Hover a dot to read it, click to open it in Event radar.`
+          : "Hover the chart to see each day's close.")}
       </p>
     </article>
   );

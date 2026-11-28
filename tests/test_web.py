@@ -87,7 +87,8 @@ def test_failed_provider_setup_and_interrupted_runs_remain_readable(tmp_path, mo
 def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypatch):
     calls = []
 
-    def scan(tickers, *, days):
+    def scan(tickers, *, days, cache, settings):
+        assert isinstance(cache, web.ScanCache)
         calls.append((tickers, days))
         if "NOKEY" in tickers:
             raise web.MissingExaKey("Set EXA_API_KEY on the server before scanning.")
@@ -105,9 +106,87 @@ def test_scan_validates_tickers_and_reports_a_missing_exa_key(tmp_path, monkeypa
 
 def test_prices_endpoint_shares_watchlist_validation(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(web, "price_history", lambda tickers, *, days: calls.append((tickers, days)) or
+    monkeypatch.setattr(web, "price_history", lambda tickers, *, days, cache: calls.append((tickers, days)) or
                         web.WatchlistPrices(start_date="2026-10-28", end_date="2026-11-27", series=[]))
     with TestClient(web.create_app(tmp_path)) as client:
         assert client.post("/api/prices", json={"tickers": ["aapl"], "days": 90}).status_code == 200
         assert calls == [(["AAPL"], 90)]
         assert client.post("/api/prices", json={"tickers": ["NVDA; rm"]}).status_code == 422
+
+
+def test_scan_forwards_validated_search_settings(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(web, "scan_watchlist", lambda tickers, *, days, cache, settings: seen.append(settings) or
+                        web.WatchlistScan(start_date="2026-10-28", end_date="2026-11-27", benchmark="SPY", companies=[]))
+    with TestClient(web.create_app(tmp_path)) as client:
+        body = {"tickers": ["NVDA"], "settings": {"focus": "AI chips", "include_domains": ["https://Reuters.com/"],
+                                                  "num_results": 25}}
+        assert client.post("/api/scan", json=body).status_code == 200
+        assert seen[0].include_domains == ["reuters.com"] and seen[0].num_results == 25
+        for settings in ({"num_results": 15}, {"exclude_domains": ["not a domain"]}, {"focus": "x" * 201}):
+            assert client.post("/api/scan", json={"tickers": ["NVDA"], "settings": settings}).status_code == 422
+        # Prices ignore search settings, so sending them is a client error.
+        assert client.post("/api/prices", json=body).status_code == 422
+
+
+def test_explain_validates_events_and_maps_failures(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+
+    calls = []
+
+    def explain(ticker, reported, headline, *, settings, cache):
+        calls.append((ticker, reported, headline, settings.focus))
+        if ticker == "NOKEY":
+            raise web.MissingExaKey("Set EXA_API_KEY on the server before researching events.")
+        if ticker == "DOWN":
+            raise web.ExplainError("Exa could not research this event right now; try again shortly.")
+        raise AssertionError("Only failure paths are exercised here.")
+
+    monkeypatch.setattr(web, "explain_event", explain)
+    today = date.today()
+    event = {"reported_date": (today - timedelta(days=3)).isoformat(), "headline": "The CEO returned."}
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/explain", json={**event, "ticker": "NOKEY"}).status_code == 503
+        failed = client.post("/api/explain", json={**event, "ticker": "down", "settings": {"focus": "governance"}})
+        assert failed.status_code == 502 and calls[-1] == ("DOWN", today - timedelta(days=3), "The CEO returned.", "governance")
+        for invalid in ({**event, "ticker": "NVDA; rm"}, {**event, "ticker": "NVDA", "headline": ""},
+                        {**event, "ticker": "NVDA", "headline": "x" * 501},
+                        {**event, "ticker": "NVDA", "reported_date": (today + timedelta(days=1)).isoformat()}):
+            assert client.post("/api/explain", json=invalid).status_code == 422
+
+
+def test_discover_validates_queries_and_maps_failures(tmp_path, monkeypatch):
+    def search(query, *, cache):
+        if query == "no key":
+            raise web.MissingExaKey("Set EXA_API_KEY on the server before searching companies.")
+        raise web.DiscoverError("Exa could not search companies right now; try again shortly.")
+
+    monkeypatch.setattr(web, "discover_companies", search)
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/discover", json={"query": "no key"}).status_code == 503
+        assert client.post("/api/discover", json={"query": "chip makers"}).status_code == 502
+        for invalid in ({"query": ""}, {"query": "x"}, {"query": "x" * 201}, {}):
+            assert client.post("/api/discover", json=invalid).status_code == 422
+
+
+def test_ask_validates_the_period_and_maps_failures(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+
+    calls = []
+
+    def answer(ticker, question, start, end, *, settings, cache):
+        calls.append((ticker, question, start, end))
+        raise web.AskError("Exa could not answer this right now; try again shortly.")
+
+    monkeypatch.setattr(web, "ask_about_stock", answer)
+    today = date.today()
+    good = {"ticker": "ba", "question": "What happened?", "start_date": (today - timedelta(days=30)).isoformat(),
+            "end_date": today.isoformat()}
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/ask", json=good).status_code == 502
+        assert calls[0][0] == "BA"
+        for changes in ({"end_date": (today + timedelta(days=1)).isoformat()},
+                        {"start_date": (today + timedelta(days=1)).isoformat()},
+                        {"start_date": (today - timedelta(days=400)).isoformat()},
+                        {"question": "Hi"}, {"ticker": "BA; rm"}):
+            assert client.post("/api/ask", json={**good, **changes}).status_code == 422

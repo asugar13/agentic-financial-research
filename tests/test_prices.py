@@ -171,3 +171,14 @@ def test_standalone_cli_reports_failure_with_nonzero_exit(monkeypatch, capsys):
     _server(monkeypatch, pd.DataFrame())
     assert prices.main(["--symbols", "AAPL", "--start-date", "2025-01-04", "--end-date", "2025-01-08"]) == 1
     assert json.loads(capsys.readouterr().out)["error"]
+
+
+def test_a_missing_close_for_the_latest_session_is_dropped_not_filled(monkeypatch):
+    # Yahoo lists the current session before its close exists; the series ends a day earlier.
+    history = _history().astype(object)
+    history.loc[pd.Timestamp("2025-01-08"), "Close"] = float("nan")
+    _server(monkeypatch, history)
+    result = prices.get_market_prices(_request())
+    assert result.error is None
+    observation = result.observations[0]
+    assert str(observation.period_end) == "2025-01-07" and observation.data["coverage_note"]

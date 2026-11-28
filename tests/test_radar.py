@@ -1,6 +1,6 @@
 """Check watchlist event scans without paid Exa or live Yahoo requests."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -136,3 +136,94 @@ def test_price_history_needs_no_exa_key_and_reports_missing_tickers(services, mo
     assert acme.change_pct == 30.0 and acme.error is None
     assert nope.prices == [] and nope.error
     assert services == []
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = {"value": datetime(2026, 11, 27, 8, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(radar, "_now", lambda: now["value"])
+    return now
+
+
+def test_a_fresh_cached_scan_is_shared_without_another_exa_call(services, clock, tmp_path):
+    cache = radar.ScanCache(tmp_path)
+    first = radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    searches = len(services)
+    clock["value"] += timedelta(hours=11)
+    second = radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    assert len(services) == searches
+    assert second.companies == first.companies and not second.companies[0].stale
+
+
+def test_a_failed_live_search_falls_back_to_the_last_good_scan(services, clock, tmp_path, monkeypatch):
+    cache = radar.ScanCache(tmp_path)
+    radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    clock["value"] += timedelta(hours=13)
+
+    def unavailable(*args):
+        raise ValueError("Exa is down")
+
+    monkeypatch.setattr(radar, "_search", unavailable)
+    company = radar.scan_watchlist(["ACME"], today=END, cache=cache).companies[0]
+    assert company.stale and company.error is None and company.events
+
+
+def test_failed_scans_and_unreadable_files_are_never_served(services, clock, tmp_path):
+    cache = radar.ScanCache(tmp_path)
+    assert radar.scan_watchlist(["FAIL"], today=END, cache=cache).companies[0].error
+    assert cache.read("events", "FAIL", 30, radar.CompanyScan) is None
+    broken = tmp_path / f"v{radar.CACHE_VERSION}" / "events" / "ACME-30d.json"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_text("{not json")
+    rescanned = radar.scan_watchlist(["ACME"], today=END, cache=cache).companies[0]
+    assert rescanned.events and not rescanned.stale
+
+
+def test_prices_are_reused_briefly_and_fall_back_when_yahoo_fails(services, clock, tmp_path, monkeypatch):
+    cache = radar.ScanCache(tmp_path)
+    live = radar.price_history(["ACME"], today=END, cache=cache).series[0]
+
+    def unavailable(request, symbol):
+        raise _PriceError("Yahoo is down")
+
+    monkeypatch.setattr(radar, "_fetch", unavailable)
+    clock["value"] += timedelta(minutes=29)
+    reused = radar.price_history(["ACME"], today=END, cache=cache).series[0]
+    assert reused == live and not reused.stale
+    clock["value"] += timedelta(minutes=2)
+    fallback = radar.price_history(["ACME"], today=END, cache=cache).series[0]
+    assert fallback.stale and fallback.prices == live.prices
+
+
+def test_unsafe_tickers_never_become_cache_paths(tmp_path):
+    cache = radar.ScanCache(tmp_path)
+    cache.write("events", "../escape", 30, radar.CompanyScan(ticker="X"))
+    assert cache.read("events", "../escape", 30, radar.CompanyScan) is None
+    assert not any(tmp_path.parent.glob("escape*"))
+
+
+def test_search_settings_reach_exa_and_defaults_leave_the_request_unchanged(services):
+    radar.scan_watchlist(["ACME"], today=END)
+    _, default = services[-1]
+    assert default["num_results"] == 10 and "include_domains" not in default and "exclude_domains" not in default
+    settings = radar.SearchSettings(focus="AI chips", include_domains=["reuters.com"], exclude_domains=["fool.com"],
+                                    num_results=25)
+    scan = radar.scan_watchlist(["ACME"], today=END, settings=settings)
+    query, options = services[-1]
+    assert query.endswith("Focus on: AI chips")
+    assert options["include_domains"] == ["reuters.com"] and options["exclude_domains"] == ["fool.com"]
+    assert options["num_results"] == 25 and scan.settings == settings
+
+
+def test_each_settings_combination_has_its_own_cache_copy(services, clock, tmp_path):
+    cache = radar.ScanCache(tmp_path)
+    radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    searches = len(services)
+    focused = radar.SearchSettings(focus="AI chips")
+    radar.scan_watchlist(["ACME"], today=END, cache=cache, settings=focused)
+    assert len(services) == searches + 1
+    radar.scan_watchlist(["ACME"], today=END, cache=cache, settings=focused)
+    radar.scan_watchlist(["ACME"], today=END, cache=cache)
+    assert len(services) == searches + 1
+    files = sorted(path.name for path in (tmp_path / f"v{radar.CACHE_VERSION}" / "events").iterdir())
+    assert files == ["ACME-30d-" + focused.cache_variant() + ".json", "ACME-30d.json"]

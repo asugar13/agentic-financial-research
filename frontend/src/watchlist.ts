@@ -42,6 +42,9 @@ export function writeStored(storage: () => Storage, key: string, value: unknown)
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 export const formatDate = (iso: string) => dateFormat.format(new Date(iso + "T00:00:00Z"));
+// Timestamps are shown in the viewer's own time zone.
+const timeFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+export const formatTime = (iso: string) => timeFormat.format(new Date(iso));
 export const isoDay = (day: Date) => day.toISOString().slice(0, 10);
 export const signed = (value: number) => (value > 0 ? "+" : "") + value.toFixed(1) + "%";
 
