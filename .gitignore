@@ -9,5 +9,6 @@ build/
 dist/
 node_modules/
 
-# Personal learning walkthrough
+# Personal learning and interview practice
 /docs/pass-1.md
+/practice/exa_search_exercises.py

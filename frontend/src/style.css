@@ -1312,12 +1312,12 @@ a {
 
 /* Sample portfolio summary */
 
+/* A single grid column that always fills the card. A leftover flex-era justify-content
+   once made the chart shrink to its caption's width and flicker on hover. */
 .portfolio-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   margin-top: 20px;
   padding: 20px 24px;
   background: var(--paper);
@@ -1345,52 +1345,7 @@ a {
   font-size: 15px;
 }
 
-.portfolio-summary__allocation {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.donut {
-  flex: none;
-  width: 104px;
-  height: 104px;
-}
-
-.portfolio-summary__legend {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-
-.portfolio-summary__legend li {
-  display: grid;
-  grid-template-columns: 10px 44px 34px auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.portfolio-summary__legend i {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-}
-
-.portfolio-summary__legend span {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
 /* Portfolio over time, with market-wide news */
-
-.portfolio-summary {
-  display: grid;
-  gap: 12px;
-}
 
 .portfolio-summary__head {
   display: flex;
