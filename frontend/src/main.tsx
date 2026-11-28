@@ -3,7 +3,8 @@ import { createRoot } from "react-dom/client";
 import "@fontsource/dm-sans/latin-400.css";
 import "@fontsource/dm-sans/latin-600.css";
 import "@fontsource/instrument-serif/latin-400.css";
-import { api, type Config, type EventCategory, type WatchlistPrices, type WatchlistScan } from "./api";
+import { api, type Config, type Discovery, type EventCategory, type WatchlistPrices, type WatchlistScan } from "./api";
+import { Discover } from "./Discover";
 import { Portfolio } from "./Portfolio";
 import { Radar } from "./Radar";
 import { DEFAULT_FILTERS, DEFAULT_SETTINGS, SearchSettingsPanel, settingsPayload, type Filters, type SettingsForm } from "./SearchSettings";
@@ -14,10 +15,11 @@ import { WatchlistForm } from "./WatchlistForm";
 import { DEFAULT_WATCHLIST, eventRows, formatTime, parseTickers, readStored, writeStored, type Row } from "./watchlist";
 import "./style.css";
 
-type View = "portfolio" | "radar" | "research" | "event";
+type View = "portfolio" | "radar" | "discover" | "research" | "event";
 type Navigate = (view: View, query?: Record<string, string>) => void;
 const VIEWS: { id: View; label: string }[] = [
-  { id: "portfolio", label: "Portfolio" }, { id: "radar", label: "Event radar" }, { id: "research", label: "Custom research" },
+  { id: "portfolio", label: "Portfolio" }, { id: "radar", label: "Event radar" }, { id: "discover", label: "Discover" },
+  { id: "research", label: "Custom research" },
 ];
 // Results are kept for the browser tab, so returning from a research run keeps the table.
 interface Stored<T> { key: string; data: T }
@@ -27,7 +29,7 @@ const session = () => sessionStorage;
 
 function readView(): View {
   const view = new URLSearchParams(window.location.search).get("view");
-  return view === "radar" || view === "research" || view === "event" ? view : "portfolio";
+  return view === "radar" || view === "discover" || view === "research" || view === "event" ? view : "portfolio";
 }
 
 // A rendering error shows a message instead of a blank page.
@@ -55,7 +57,8 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   const [days, setDays] = useState(30);
   const [prices, setPrices] = useState(() => readStored<Stored<WatchlistPrices> | null>(session, "radar-prices", null));
   const [scan, setScan] = useState(() => readStored<Stored<WatchlistScan> | null>(session, "radar-scan", null));
-  const [loading, setLoading] = useState<"prices" | "scan" | null>(null);
+  const [loading, setLoading] = useState<"prices" | "scan" | "discover" | null>(null);
+  const [discovery, setDiscovery] = useState(() => readStored<Discovery | null>(session, "radar-discovery", null));
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [settings, setSettings] = useState(() => readStored<SettingsForm>(local, "radar-settings", DEFAULT_SETTINGS));
@@ -67,6 +70,7 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
 
   useEffect(() => writeStored(session, "radar-prices", prices), [prices]);
   useEffect(() => writeStored(session, "radar-scan", scan), [scan]);
+  useEffect(() => writeStored(session, "radar-discovery", discovery), [discovery]);
   useEffect(() => writeStored(local, "radar-settings", settings), [settings]);
   useEffect(() => writeStored(local, "radar-filters", filters), [filters]);
 
@@ -106,9 +110,28 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
     }
   }
 
-  // The Portfolio tab draws its charts as soon as it opens; prices are free.
+  async function discover(query: string) {
+    setLoading("discover");
+    setError("");
+    try {
+      setDiscovery(await post<Discovery>("discover", { query }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The company search failed.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  function addHolding(ticker: string) {
+    if (tickers.includes(ticker) || tickers.length >= 15) return;
+    const next = [...tickers, ticker].join(", ");
+    setWatchlist(next);
+    writeStored(local, "radar-watchlist", next);
+  }
+
+  // Opening Portfolio draws its charts, and redraws them if the holdings changed elsewhere; prices are free.
   useEffect(() => {
-    if (view === "portfolio" && !prices && valid) void loadPrices();
+    if (view === "portfolio" && valid && prices?.key !== key) void loadPrices();
   }, [view]);
 
   // Event-type and confidence filters only change what is shown, never the search.
@@ -137,6 +160,10 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
 
   let content: ReactNode;
   if (view === "research") content = <ResearchForm config={config} />;
+  else if (view === "discover") {
+    content = <Discover discovery={discovery} loading={loading === "discover"} notice={error && notice} holdings={tickers}
+      onSearch={discover} onAdd={addHolding} onPortfolio={() => onNavigate("portfolio")} />;
+  }
   else if (view === "event") {
     // The event lives in the address, so the page survives a reload and can be shared.
     const params = new URLSearchParams(window.location.search);

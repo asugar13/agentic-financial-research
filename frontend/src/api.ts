@@ -144,3 +144,22 @@ export interface EventExplanation {
   explained_at: string;
   stale: boolean;
 }
+
+export interface DiscoveredCompany {
+  name: string;
+  ticker: string;
+  exchange: string | null;
+  description: string;
+  sources: Citation[];
+  confidence: Finding["confidence"];
+  last_close: number | null;
+  currency: string | null;
+}
+
+export interface Discovery {
+  query: string;
+  companies: DiscoveredCompany[];
+  dropped: string[];
+  discovered_at: string;
+  stale: boolean;
+}
