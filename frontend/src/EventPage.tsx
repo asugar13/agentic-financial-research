@@ -13,7 +13,7 @@ interface Props {
   onBack: () => void;
 }
 
-function Sources({ sources, confidence }: { sources: Citation[]; confidence?: Finding["confidence"] }) {
+export function Sources({ sources, confidence }: { sources: Citation[]; confidence?: Finding["confidence"] }) {
   const unique = [...new Map(sources.map((source) => [host(source.url), source])).values()];
   if (!unique.length && !confidence) return null;
   return (

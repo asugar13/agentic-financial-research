@@ -9,17 +9,17 @@ import { Portfolio } from "./Portfolio";
 import { Radar } from "./Radar";
 import { DEFAULT_FILTERS, DEFAULT_SETTINGS, SearchSettingsPanel, settingsPayload, type Filters, type SettingsForm } from "./SearchSettings";
 import { EventPage } from "./EventPage";
-import { ResearchForm } from "./ResearchForm";
+import { AskPage } from "./AskPage";
 import { ResearchRun } from "./ResearchRun";
 import { WatchlistForm } from "./WatchlistForm";
 import { DEFAULT_WATCHLIST, eventRows, formatTime, parseTickers, readStored, writeStored, type Row } from "./watchlist";
 import "./style.css";
 
-type View = "portfolio" | "radar" | "discover" | "research" | "event";
+type View = "portfolio" | "radar" | "discover" | "ask" | "event";
 type Navigate = (view: View, query?: Record<string, string>) => void;
 const VIEWS: { id: View; label: string }[] = [
   { id: "portfolio", label: "Portfolio" }, { id: "radar", label: "Event radar" }, { id: "discover", label: "Discover" },
-  { id: "research", label: "Custom research" },
+  { id: "ask", label: "Ask" },
 ];
 // Results are kept for the browser tab, so returning from a research run keeps the table.
 interface Stored<T> { key: string; data: T }
@@ -29,7 +29,7 @@ const session = () => sessionStorage;
 
 function readView(): View {
   const view = new URLSearchParams(window.location.search).get("view");
-  return view === "radar" || view === "discover" || view === "research" || view === "event" ? view : "portfolio";
+  return view === "radar" || view === "discover" || view === "ask" || view === "event" ? view : "portfolio";
 }
 
 // A rendering error shows a message instead of a blank page.
@@ -159,10 +159,11 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   const busy = loading !== null || !valid;
 
   let content: ReactNode;
-  if (view === "research") content = <ResearchForm config={config} />;
+  if (view === "ask") content = <AskPage key={window.location.search} settings={settingsPayload(settings)} />;
   else if (view === "discover") {
     content = <Discover discovery={discovery} loading={loading === "discover"} notice={error && notice} holdings={tickers}
-      onSearch={discover} onAdd={addHolding} onPortfolio={() => onNavigate("portfolio")} />;
+      onSearch={discover} onAdd={addHolding} onPortfolio={() => onNavigate("portfolio")}
+      onAsk={(ticker: string) => onNavigate("ask", { ticker })} />;
   }
   else if (view === "event") {
     // The event lives in the address, so the page survives a reload and can be shared.

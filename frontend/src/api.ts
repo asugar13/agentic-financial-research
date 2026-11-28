@@ -163,3 +163,20 @@ export interface Discovery {
   discovered_at: string;
   stale: boolean;
 }
+
+export interface StockAnswer {
+  ticker: string;
+  name: string | null;
+  currency: string | null;
+  question: string;
+  start_date: string;
+  end_date: string;
+  answer: Finding;
+  key_points: { point: string; evidence: string; sources: Citation[]; confidence: Finding["confidence"] }[];
+  gaps: Finding | null;
+  sources: { title: string; url: string; published_date: string | null }[];
+  prices: { date: string; close: number }[];
+  settings: SearchSettings;
+  answered_at: string;
+  stale: boolean;
+}

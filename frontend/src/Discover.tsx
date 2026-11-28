@@ -13,9 +13,10 @@ interface Props {
   onSearch: (query: string) => void;
   onAdd: (ticker: string) => void;
   onPortfolio: () => void;
+  onAsk: (ticker: string) => void;
 }
 
-export function Discover({ discovery, loading, notice, holdings, onSearch, onAdd, onPortfolio }: Props) {
+export function Discover({ discovery, loading, notice, holdings, onSearch, onAdd, onPortfolio, onAsk }: Props) {
   const [query, setQuery] = useState(discovery?.query ?? "");
   const [added, setAdded] = useState(false);
   const full = holdings.length >= 15;
@@ -84,7 +85,8 @@ export function Discover({ discovery, loading, notice, holdings, onSearch, onAdd
                           ))}
                           {company.confidence && <span className={`event-confidence event-confidence--${company.confidence}`}>{company.confidence}</span>}
                         </td>
-                        <td>
+                        <td className="discover-actions">
+                          <button className="discover-ask" type="button" onClick={() => onAsk(company.ticker)}>Ask</button>
                           {held ? <span className="discover-held">In holdings ✓</span> : (
                             <button className="button button--secondary discover-add" type="button" disabled={full}
                               onClick={() => { onAdd(company.ticker); setAdded(true); }}>Add to holdings</button>
