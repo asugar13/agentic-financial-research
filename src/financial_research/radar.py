@@ -204,16 +204,16 @@ def _get(item: Any, key: str) -> Any:
     return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
 
 
-def _grounding(output: Any) -> dict[int, tuple[list[Citation], Confidence | None]]:
-    """Group Exa's per-field citations by event index, keeping each event's weakest confidence."""
+def group_grounding(output: Any, pattern: str) -> dict[str, tuple[list[Citation], Confidence | None]]:
+    """Group Exa's per-field citations by the pattern's first capture, keeping each group's weakest confidence."""
     rank = {"low": 0, "medium": 1, "high": 2}
-    grouped: dict[int, tuple[dict[str, Citation], Confidence | None]] = {}
+    grouped: dict[str, tuple[dict[str, Citation], Confidence | None]] = {}
     for entry in _get(output, "grounding") or []:
-        match = re.fullmatch(r"events\[(\d+)\]\.\w+", str(_get(entry, "field") or ""))
+        match = re.fullmatch(pattern, str(_get(entry, "field") or ""))
         if not match:
             continue
-        index = int(match.group(1))
-        citations, confidence = grouped.get(index, ({}, None))
+        group = match.group(1)
+        citations, confidence = grouped.get(group, ({}, None))
         for citation in _get(entry, "citations") or []:
             url = _get(citation, "url")
             if isinstance(url, str) and url.startswith(("https://", "http://")) and url not in citations:
@@ -221,8 +221,13 @@ def _grounding(output: Any) -> dict[int, tuple[list[Citation], Confidence | None
         level = _get(entry, "confidence")
         if level in rank and (confidence is None or rank[level] < rank[confidence]):
             confidence = level
-        grouped[index] = (citations, confidence)
-    return {index: (list(citations.values()), confidence) for index, (citations, confidence) in grouped.items()}
+        grouped[group] = (citations, confidence)
+    return {group: (list(citations.values()), confidence) for group, (citations, confidence) in grouped.items()}
+
+
+def _grounding(output: Any) -> dict[int, tuple[list[Citation], Confidence | None]]:
+    """Citations and weakest confidence for each event row, keyed by row index."""
+    return {int(index): value for index, value in group_grounding(output, r"events\[(\d+)\]\.\w+").items()}
 
 
 def _optional_date(value: Any) -> date | None:

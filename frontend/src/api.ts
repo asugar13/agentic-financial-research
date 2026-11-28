@@ -115,3 +115,32 @@ export interface WatchlistPrices {
   end_date: string;
   series: PriceSeries[];
 }
+
+export interface Citation {
+  title: string;
+  url: string;
+}
+
+export interface Finding {
+  text: string;
+  sources: Citation[];
+  confidence: "low" | "medium" | "high" | null;
+}
+
+export interface EventExplanation {
+  ticker: string;
+  name: string | null;
+  currency: string | null;
+  reported_date: string;
+  headline: string;
+  summary: Finding;
+  drivers: { point: string; evidence: string; sources: Citation[]; confidence: Finding["confidence"] }[];
+  market_context: Finding;
+  upcoming: Finding | null;
+  sources: { title: string; url: string; published_date: string | null }[];
+  prices: { date: string; close: number }[];
+  reaction: CompanyEvent["reaction"];
+  settings: SearchSettings;
+  explained_at: string;
+  stale: boolean;
+}

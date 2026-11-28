@@ -1,6 +1,7 @@
 """HTTP entry point for the React UI. Run with one Uvicorn worker."""
 
 import json
+from datetime import date, timedelta
 import logging
 import os
 import re
@@ -13,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field, field_validator
 
+from financial_research.explain import EventExplanation, ExplainError, explain_event
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
 from financial_research.radar import (
@@ -72,6 +74,29 @@ class WatchlistRequest(Model):
 
 class ScanRequest(WatchlistRequest):
     settings: SearchSettings = SearchSettings()
+
+
+class ExplainRequest(Model):
+    ticker: str = Field(min_length=1, max_length=12)
+    reported_date: date
+    headline: str = Field(min_length=1, max_length=500)
+    settings: SearchSettings = SearchSettings()
+
+    @field_validator("ticker")
+    @classmethod
+    def valid_ticker(cls, ticker: str) -> str:
+        ticker = ticker.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,11}", ticker):
+            raise ValueError("Enter a stock ticker such as NVDA, BRK-B, or SAP.DE.")
+        return ticker
+
+    @field_validator("reported_date")
+    @classmethod
+    def recent_past(cls, reported: date) -> date:
+        today = date.today()
+        if not today - timedelta(days=400) <= reported <= today:
+            raise ValueError("Choose an event from the past year.")
+        return reported
 
 
 class ResearchRunResponse(Model):
@@ -142,6 +167,16 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
             return scan_watchlist(request.tickers, days=request.days, cache=cache, settings=request.settings)
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
+
+    @app.post("/api/explain", response_model=EventExplanation)
+    def explain(request: ExplainRequest) -> EventExplanation:
+        try:
+            return explain_event(request.ticker, request.reported_date, request.headline,
+                                 settings=request.settings, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except ExplainError as exc:
+            raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/runs", status_code=202)
     async def start(request: ResearchRunRequest, background: BackgroundTasks):

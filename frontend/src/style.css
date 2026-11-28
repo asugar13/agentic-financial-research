@@ -1085,3 +1085,149 @@ a {
   opacity: 0.4;
   text-decoration: line-through;
 }
+
+/* Event research page */
+
+.event-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.event-moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 16px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.event-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .event-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.event-main,
+.event-side {
+  display: grid;
+  gap: 16px;
+}
+
+.event-card {
+  padding: 18px 20px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--accent);
+}
+
+.event-card p {
+  margin: 0 0 8px;
+  line-height: 1.55;
+}
+
+.event-card__title {
+  margin: 0 0 12px;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.event-summary {
+  font-size: 17px;
+}
+
+.event-drivers {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 0;
+  padding-left: 20px;
+}
+
+.event-drivers p {
+  margin: 4px 0;
+  color: #334159;
+}
+
+.event-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+
+.event-confidence {
+  padding: 0 7px;
+  border-radius: 999px;
+  font: 11px/1.8 var(--mono);
+  background: #eef0f4;
+  color: #3d4a5f;
+}
+
+.event-confidence--high {
+  background: #e6f4ec;
+  color: #1d6b3f;
+}
+
+.event-confidence--low {
+  background: #fbebe7;
+  color: #8f2a1d;
+}
+
+.event-source-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.event-source-list span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.spinner {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--tint-rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Keep a sign of progress, but calmer, for people who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}

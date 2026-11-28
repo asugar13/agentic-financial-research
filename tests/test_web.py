@@ -127,3 +127,29 @@ def test_scan_forwards_validated_search_settings(tmp_path, monkeypatch):
             assert client.post("/api/scan", json={"tickers": ["NVDA"], "settings": settings}).status_code == 422
         # Prices ignore search settings, so sending them is a client error.
         assert client.post("/api/prices", json=body).status_code == 422
+
+
+def test_explain_validates_events_and_maps_failures(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+
+    calls = []
+
+    def explain(ticker, reported, headline, *, settings, cache):
+        calls.append((ticker, reported, headline, settings.focus))
+        if ticker == "NOKEY":
+            raise web.MissingExaKey("Set EXA_API_KEY on the server before researching events.")
+        if ticker == "DOWN":
+            raise web.ExplainError("Exa could not research this event right now; try again shortly.")
+        raise AssertionError("Only failure paths are exercised here.")
+
+    monkeypatch.setattr(web, "explain_event", explain)
+    today = date.today()
+    event = {"reported_date": (today - timedelta(days=3)).isoformat(), "headline": "The CEO returned."}
+    with TestClient(web.create_app(tmp_path)) as client:
+        assert client.post("/api/explain", json={**event, "ticker": "NOKEY"}).status_code == 503
+        failed = client.post("/api/explain", json={**event, "ticker": "down", "settings": {"focus": "governance"}})
+        assert failed.status_code == 502 and calls[-1] == ("DOWN", today - timedelta(days=3), "The CEO returned.", "governance")
+        for invalid in ({**event, "ticker": "NVDA; rm"}, {**event, "ticker": "NVDA", "headline": ""},
+                        {**event, "ticker": "NVDA", "headline": "x" * 501},
+                        {**event, "ticker": "NVDA", "reported_date": (today + timedelta(days=1)).isoformat()}):
+            assert client.post("/api/explain", json=invalid).status_code == 422
