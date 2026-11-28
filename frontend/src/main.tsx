@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@fontsource/dm-sans/latin-400.css";
 import "@fontsource/dm-sans/latin-600.css";
 import "@fontsource/instrument-serif/latin-400.css";
-import { api, type Config, type Discovery, type EventCategory, type WatchlistPrices, type WatchlistScan } from "./api";
+import { api, type Config, type Discovery, type EventCategory, type MarketScan, type WatchlistPrices, type WatchlistScan } from "./api";
 import { Discover } from "./Discover";
 import { Portfolio } from "./Portfolio";
 import { Radar } from "./Radar";
@@ -59,6 +59,7 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   const [scan, setScan] = useState(() => readStored<Stored<WatchlistScan> | null>(session, "radar-scan", null));
   const [loading, setLoading] = useState<"prices" | "scan" | "discover" | null>(null);
   const [discovery, setDiscovery] = useState(() => readStored<Discovery | null>(session, "radar-discovery", null));
+  const [market, setMarket] = useState(() => readStored<Stored<MarketScan> | null>(session, "radar-market", null));
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [settings, setSettings] = useState(() => readStored<SettingsForm>(local, "radar-settings", DEFAULT_SETTINGS));
@@ -71,6 +72,7 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
   useEffect(() => writeStored(session, "radar-prices", prices), [prices]);
   useEffect(() => writeStored(session, "radar-scan", scan), [scan]);
   useEffect(() => writeStored(session, "radar-discovery", discovery), [discovery]);
+  useEffect(() => writeStored(session, "radar-market", market), [market]);
   useEffect(() => writeStored(local, "radar-settings", settings), [settings]);
   useEffect(() => writeStored(local, "radar-filters", filters), [filters]);
 
@@ -96,11 +98,15 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
     setError("");
     try {
       // Refresh the charts too if the watchlist changed, so dots land on matching lines.
+      // Market news is shared by everyone; if it fails, the company results still show.
+      const marketScan = post<MarketScan>("market", { days }).catch(() => null);
       const [scanned, charted] = await Promise.all([
         post<WatchlistScan>("scan", { tickers, days, settings: settingsPayload(settings) }),
         prices?.key === key ? Promise.resolve(prices.data) : post<WatchlistPrices>("prices", { tickers, days }),
       ]);
       setScan({ key, data: scanned });
+      const scannedMarket = await marketScan;
+      if (scannedMarket) setMarket({ key: String(days), data: scannedMarket });
       setPrices({ key, data: charted });
       setOpen(null);
     } catch (reason) {
@@ -178,6 +184,7 @@ function Workspace({ config, view, onNavigate }: { config: Config; view: View; o
       form={form(runScan, <button className="button button--primary" disabled={busy}>{loading === "scan" ? "Scanning…" : "Scan"}</button>)} />;
   } else {
     content = <Portfolio prices={prices?.data ?? null} rows={scan && scan.key === prices?.key ? rows : []}
+      market={market && market.key === String(days) ? market.data : null}
       explained={Boolean(scan && scan.key === prices?.key)} notice={notice}
       onSelect={(row: Row) => { setOpen(row.key); onNavigate("radar"); }}
       form={form(loadPrices, <>

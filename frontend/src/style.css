@@ -1384,3 +1384,73 @@ a {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* Portfolio over time, with market-wide news */
+
+.portfolio-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.portfolio-summary__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.portfolio-summary__weights {
+  margin: 0;
+  font: 12px/1.6 var(--mono);
+  color: var(--muted);
+}
+
+.portfolio-chart__line {
+  fill: none;
+  stroke: var(--navy);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.portfolio-chart__benchmark {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+}
+
+.portfolio-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.portfolio-chart__key::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--navy);
+}
+
+.portfolio-chart__key--benchmark::before {
+  border-top: 1.5px dashed var(--muted);
+}
+
+.mdot--monetary_policy { fill: #1b3a9e; }
+.mdot--economic_data { fill: #0e7c86; }
+.mdot--trade_policy { fill: #b07800; }
+.mdot--geopolitics { fill: #b42318; }
+.mdot--markets { fill: #5b2fa3; }
+.mdot--other { fill: #6b7587; }
+
+.mcat--monetary_policy { background: var(--tint); color: #1b3a9e; }
+.mcat--economic_data { background: #e3f4f5; color: #0b5f66; }
+.mcat--trade_policy { background: #fdf3dc; color: #7a5200; }
+.mcat--geopolitics { background: #fbebe7; color: #8f2a1d; }
+.mcat--markets { background: #f1eafd; color: #5b2fa3; }

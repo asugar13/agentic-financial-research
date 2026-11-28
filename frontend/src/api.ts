@@ -180,3 +180,24 @@ export interface StockAnswer {
   answered_at: string;
   stale: boolean;
 }
+
+export type MarketCategory = "monetary_policy" | "economic_data" | "trade_policy" | "geopolitics" | "markets" | "other";
+
+export interface MarketEvent {
+  reported_date: string;
+  category: MarketCategory;
+  headline: string;
+  why_it_matters: string;
+  sources: Citation[];
+  confidence: Finding["confidence"];
+  market_move: CompanyEvent["reaction"];
+}
+
+export interface MarketScan {
+  start_date: string;
+  end_date: string;
+  events: MarketEvent[];
+  benchmark: { date: string; close: number }[];
+  scanned_at: string;
+  stale: boolean;
+}

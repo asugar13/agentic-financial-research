@@ -17,6 +17,7 @@ from pydantic import Field, field_validator, model_validator
 from financial_research.ask import AskError, StockAnswer, ask_about_stock
 from financial_research.discover import DiscoverError, Discovery, discover_companies
 from financial_research.explain import EventExplanation, ExplainError, explain_event
+from financial_research.market import MarketError, MarketScan, scan_market
 from financial_research.models import HistoricalPriceRequest, Model, ResearchReport, Text
 from financial_research.ollama_model import OllamaModel
 from financial_research.radar import (
@@ -100,6 +101,10 @@ class AskRequest(Model):
         if not timedelta(0) <= self.end_date - self.start_date <= timedelta(days=366):
             raise ValueError("Choose a start date before the end date, at most a year apart.")
         return self
+
+
+class MarketRequest(Model):
+    days: int = Field(default=30, ge=1, le=90)
 
 
 class DiscoverRequest(Model):
@@ -206,6 +211,15 @@ def create_app(runs: Path = Path("runs"), assets: Path = Path("frontend/dist")) 
         except MissingExaKey as exc:
             raise HTTPException(503, str(exc)) from None
         except AskError as exc:
+            raise HTTPException(502, str(exc)) from None
+
+    @app.post("/api/market", response_model=MarketScan)
+    def market(request: MarketRequest) -> MarketScan:
+        try:
+            return scan_market(days=request.days, cache=cache)
+        except MissingExaKey as exc:
+            raise HTTPException(503, str(exc)) from None
+        except MarketError as exc:
             raise HTTPException(502, str(exc)) from None
 
     @app.post("/api/discover", response_model=Discovery)
